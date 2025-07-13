@@ -18,6 +18,7 @@ class Medicine(db.Model):
     api_description = db.Column(db.Text, nullable=True)  # Medicine description
     api_components = db.Column(db.Text, nullable=True)  # Medicine components (JSON string)
     api_company = db.Column(db.String(200), nullable=True)  # Manufacturing company
+    api_usage = db.Column(db.Text, nullable=True)  # Medicine usage/indications from RxNav
     
     def to_dict(self):
         return {
@@ -34,6 +35,7 @@ class Medicine(db.Model):
             'api_image': self.api_image,
             'api_description': self.api_description,
             'api_components': self.api_components,
-            'api_company': self.api_company
+            'api_company': self.api_company,
+            'api_usage': self.api_usage
         }
 

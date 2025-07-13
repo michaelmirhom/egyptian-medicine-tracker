@@ -408,6 +408,31 @@
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
         }
 
+        .medicine-usage {
+            background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%);
+            border: 1px solid #d4edda;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            position: relative;
+        }
+
+        .medicine-usage-title {
+            font-weight: bold;
+            color: #155724;
+            margin-bottom: 8px;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .medicine-usage-content {
+            color: #155724;
+            line-height: 1.5;
+            font-size: 0.9rem;
+        }
+
         .loading {
             text-align: center;
             padding: 50px;
@@ -563,6 +588,209 @@
         </div>
     </div>
 
+    <!-- Floating Chat Widget (Top Right) -->
+    <div id="chat-widget">
+        <div id="chat-icon" title="Chat with us">💬</div>
+        <div id="chat-window" class="hidden">
+            <div id="chat-header">
+                <span>Ask Harby Pharmacy</span>
+                <button id="chat-close">&times;</button>
+            </div>
+            <div id="chat-messages"></div>
+            <div id="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Ask a question..." autocomplete="off" />
+                <button id="chat-send">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        #chat-widget {
+            position: fixed;
+            top: 32px;
+            right: 32px;
+            z-index: 9999;
+            font-family: inherit;
+        }
+
+        #chat-icon {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+            cursor: pointer;
+            transition: box-shadow 0.2s, background 0.2s;
+            border: 3px solid #fff;
+            outline: 2px solid #764ba2;
+        }
+
+        #chat-icon:hover {
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        }
+
+        #chat-window {
+            position: absolute;
+            top: 70px;
+            right: 0;
+            width: 360px;
+            max-width: 95vw;
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 2px solid #764ba2;
+            animation: fadeInDown 0.3s;
+        }
+
+        #chat-window.hidden {
+            display: none;
+        }
+
+        #chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 20px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            font-size: 1.1rem;
+            border-top-left-radius: 18px;
+            border-top-right-radius: 18px;
+        }
+
+        #chat-header button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: color 0.2s;
+        }
+
+        #chat-header button:hover {
+            color: #ffd700;
+        }
+
+        #chat-messages {
+            flex: 1;
+            padding: 18px 16px;
+            background: #f8f9fa;
+            overflow-y: auto;
+            max-height: 260px;
+            min-height: 120px;
+            font-size: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .chat-msg {
+            margin-bottom: 14px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-msg.user {
+            align-items: flex-end;
+        }
+
+        .chat-msg.bot {
+            align-items: flex-start;
+        }
+
+        .chat-bubble {
+            padding: 12px 18px;
+            border-radius: 18px;
+            max-width: 80%;
+            word-break: break-word;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+            font-size: 1rem;
+            font-family: inherit;
+        }
+
+        .chat-msg.user .chat-bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 6px;
+        }
+
+        .chat-msg.bot .chat-bubble {
+            background: #e8eaf6;
+            color: #333;
+            border-bottom-left-radius: 6px;
+        }
+
+        #chat-input-area {
+            display: flex;
+            border-top: 1px solid #eee;
+            background: #fff;
+            padding: 12px 10px;
+        }
+
+        #chat-input {
+            flex: 1;
+            border: none;
+            border-radius: 18px;
+            padding: 12px 16px;
+            font-size: 1rem;
+            outline: none;
+            background: #f3f3fa;
+            margin-right: 10px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+        }
+
+        #chat-send {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 18px;
+            padding: 0 22px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-weight: bold;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+
+        #chat-send:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-40px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 600px) {
+            #chat-window {
+                width: 99vw;
+                right: -10px;
+            }
+
+            #chat-widget {
+                right: 2vw;
+                top: 2vw;
+            }
+        }
+    </style>
+
     <script>
         let allMedicines = [];
 
@@ -633,6 +861,11 @@
                     <div class="medicine-price">
                         ${medicine.price ? `${medicine.price} ${medicine.currency}` : 'Price not available'}
                     </div>
+                    
+                    ${medicine.api_usage ? `<div class="medicine-usage">
+                        <div class="medicine-usage-title">💊 Usage & Indications</div>
+                        <div class="medicine-usage-content">${medicine.api_usage}</div>
+                    </div>` : ''}
                 </div>
             `).join('');
         }
@@ -677,6 +910,11 @@
                     <div class="medicine-price">
                         ${product.price ? `${product.price} ${product.currency || 'EGP'}` : 'Price not available'}
                     </div>
+                    
+                    ${product.usage && product.usage !== 'Usage information not available' ? `<div class="medicine-usage">
+                        <div class="medicine-usage-title">💊 Usage & Indications</div>
+                        <div class="medicine-usage-content">${product.usage}</div>
+                    </div>` : ''}
                     
                     ${product.image ? `<div class="medicine-image-container">
                         <img src="${product.image}" alt="Medicine" class="medicine-image" onerror="this.style.display='none'">
@@ -843,7 +1081,70 @@
             const date = new Date(dateString);
             return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
         }
+
+        // Chat widget logic
+        (function () {
+            const chatIcon = document.getElementById('chat-icon');
+            const chatWindow = document.getElementById('chat-window');
+            const chatClose = document.getElementById('chat-close');
+            const chatInput = document.getElementById('chat-input');
+            const chatSend = document.getElementById('chat-send');
+            const chatMessages = document.getElementById('chat-messages');
+
+            // Open chat
+            chatIcon.onclick = function () {
+                chatWindow.classList.remove('hidden');
+                chatInput.focus();
+            };
+            // Close chat
+            chatClose.onclick = function () {
+                chatWindow.classList.add('hidden');
+            };
+            // Send on button click or Enter
+            chatSend.onclick = sendMessage;
+            chatInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') sendMessage();
+            });
+
+            function sendMessage() {
+                const msg = chatInput.value.trim();
+                if (!msg) return;
+                addMessage('user', msg);
+                chatInput.value = '';
+                chatInput.disabled = true;
+                chatSend.disabled = true;
+                // Call backend
+                fetch('/api/medicines/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: msg })
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        addMessage('bot', data.reply || 'Sorry, no answer.');
+                    })
+                    .catch(() => {
+                        addMessage('bot', 'Sorry, there was a problem.');
+                    })
+                    .finally(() => {
+                        chatInput.disabled = false;
+                        chatSend.disabled = false;
+                        chatInput.focus();
+                    });
+            }
+            function addMessage(sender, text) {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'chat-msg ' + sender;
+                const bubble = document.createElement('div');
+                bubble.className = 'chat-bubble';
+                bubble.textContent = text;
+                msgDiv.appendChild(bubble);
+                chatMessages.appendChild(msgDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        })();
     </script>
+    <script src="/static/js/chat.js"></script>
 </body>
 
 </html>

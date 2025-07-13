@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+Data/
+instance/
+*.sqlite
+egyptian_medicine_tracker/venv/
