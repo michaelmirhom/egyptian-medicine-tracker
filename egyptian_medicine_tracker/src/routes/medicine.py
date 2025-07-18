@@ -1,101 +1,96 @@
-import re
-from flask import Blueprint, request, jsonify
-from src.models.user import db
-from src.models.medicine import Medicine
-from src.services.medicine_api import medicine_api
-from src.services.rxnav_api import rxnav_api
-from src.services.local_usage_db import get_local_usage
-from src.services.usage_fallback import get_usage_generic, extract_generic_name_from_trade_name
-from src.services.name_resolver import arabic_to_english, is_arabic_text
+#!/usr/bin/env python3
+"""
+Medicine routes for the Egyptian Medicine Tracker API
+Enhanced with comprehensive medical information from multiple APIs
+"""
+
 import json
 import time
-import random
-import os
-from langchain.agents import initialize_agent, Tool
-from langchain_community.chat_models import ChatOpenAI
-from langchain.tools import tool
+import re
+import requests
+from flask import Blueprint, request, jsonify
+from fuzzywuzzy import fuzz
+from src.models.medicine import Medicine, db
+from src.services.medicine_api import medicine_api
+from src.services.rxnav_api import rxnav_api
+from src.services.usage_fallback import get_usage_generic, get_local_usage
+from src.services.name_resolver import arabic_to_english, is_arabic_text
 
 medicine_bp = Blueprint('medicine', __name__)
 
 def extract_base_medicine_name(full_name: str) -> str:
     """
     Extract the base medicine name from a full product name.
-    This handles Arabic and English medicine names.
+    This removes dosage, form, and other modifiers.
     
     Args:
-        full_name (str): Full product name (e.g., "ريفو-ميكرو 320 مجم 30 قرص")
+        full_name (str): Full product name (e.g., "Lipitor 20mg tablet")
         
     Returns:
-        str: Base medicine name (e.g., "rivo")
+        str: Base medicine name (e.g., "Lipitor")
     """
-    print(f"[DEBUG] [extract_base_medicine_name] Extracting from: '{full_name}'")
+    if not full_name:
+        return ""
     
-    # Common medicine name mappings for Arabic to English
-    arabic_to_english = {
-        'ريفو': 'rivo',
-        'ريفو-ميكرو': 'rivo',
-        'ريفو-مايكرو': 'rivo',
-        'بانادول': 'panadol',
-        'بنادول': 'panadol',  # Alternative Arabic spelling
-        'باراسيتامول': 'paracetamol',
-        'فولتارين': 'voltaren',
-        'كونكور': 'concor',
-        'ليبيتور': 'lipitor',
-        'أوجمنتين': 'augmentin',
-        'أموكسيسيلين': 'amoxicillin',
-        'كلاريتين': 'claritine',  # Claritine in Arabic
-        'كلاريتين': 'claritine',  # Alternative spelling
-        'لوراتادين': 'loratadine',  # Generic name in Arabic
-        'لوراتادين': 'loratadine',  # Alternative spelling
-        'أليجرا': 'allegra',  # Allegra in Arabic
-        'زيرتيك': 'zyrtec',  # Zyrtec in Arabic
-        'بينادريل': 'benadryl',  # Benadryl in Arabic
-        'أسبيرين': 'aspirin',  # Aspirin in Arabic
-        'أيبوبروفين': 'ibuprofen',  # Ibuprofen in Arabic
-        'أموكسيسيلين': 'amoxicillin',  # Amoxicillin in Arabic
-        'أزيثروميسين': 'azithromycin',  # Azithromycin in Arabic
-        'ديكلوفيناك': 'diclofenac',  # Diclofenac in Arabic
-        'سيتريزين': 'cetirizine',  # Cetirizine in Arabic
-        'أوميبرازول': 'omeprazole',  # Omeprazole in Arabic
-        'ميتفورمين': 'metformin',  # Metformin in Arabic
-    }
-    
-    # Convert to lowercase for matching
-    name_lower = full_name.lower()
-    
-    # Check for Arabic medicine names first
-    for arabic_name, english_name in arabic_to_english.items():
-        if arabic_name.lower() in name_lower:
-            print(f"[DEBUG] [extract_base_medicine_name] Found Arabic match: '{arabic_name}' -> '{english_name}'")
-            return english_name
-    
-    # If no Arabic match, try to extract English medicine names
-    # Common English medicine names to look for
-    english_medicines = [
-        'rivo', 'panadol', 'paracetamol', 'aspirin', 'ibuprofen',
-        'augmentin', 'amoxicillin', 'azithromycin', 'voltaren', 'diclofenac',
-        'concor', 'bisoprolol', 'lipitor', 'atorvastatin', 'cetirizine',
-        'loratadine', 'omeprazole', 'pantoprazole', 'metformin', 'cataflam'
+    # Remove common dosage patterns
+    dosage_patterns = [
+        r'\d+\s*mg',  # 20mg, 50 mg
+        r'\d+\s*mcg',  # 10mcg
+        r'\d+\s*g',    # 1g
+        r'\d+\s*ml',   # 5ml
+        r'\d+\s*IU',   # 100IU
+        r'\d+\s*units', #10 units
+        r'\d+\s*%',    #5%
     ]
     
-    for medicine in english_medicines:
-        if medicine.lower() in name_lower:
-            print(f"[DEBUG] [extract_base_medicine_name] Found English match: '{medicine}'")
-            return medicine
+    base_name = full_name
+    for pattern in dosage_patterns:
+        base_name = re.sub(pattern, '', base_name, flags=re.IGNORECASE)
     
-    # If no specific medicine found, return the first word (common pattern)
-    words = full_name.split()
-    if words:
-        first_word = words[0].lower()
-        print(f"[DEBUG] [extract_base_medicine_name] Using first word: '{first_word}'")
-        return first_word
+    # Remove common form patterns
+    form_patterns = [
+        r'\s+tablets?',
+        r'\s+capsules?',
+        r'\s+injection',
+        r'\s+cream',
+        r'\s+gel',
+        r'\s+ointment',
+        r'\s+suspension',
+        r'\s+syrup',
+        r'\s+drops',
+        r'\s+spray',
+        r'\s+inhaler',
+        r'\s+patch',
+        r'\s+suppository',
+        r'\s+powder',
+        r'\s+solution',
+    ]
     
-    print(f"[DEBUG] [extract_base_medicine_name] No extraction possible, returning original: '{full_name}'")
-    return full_name.lower()
+    for pattern in form_patterns:
+        base_name = re.sub(pattern, '', base_name, flags=re.IGNORECASE)
+    
+    # Remove common quantity patterns
+    quantity_patterns = [
+        r'\s+\d+\s*tabs?',
+        r'\s+\d+\s*caps?',
+        r'\s+\d+\s*amps?',
+        r'\s+\d+\s*vials?',
+        r'\s+\d+\s*tubes?',
+        r'\s+\d+\s*bottle[s]?',
+    ]
+    
+    for pattern in quantity_patterns:
+        base_name = re.sub(pattern, '', base_name, flags=re.IGNORECASE)
+    
+    # Clean up extra spaces and punctuation
+    base_name = re.sub(r'\s+', ' ', base_name).strip()
+    base_name = re.sub(r'[^\w\s-]', '', base_name).strip()
+    
+    return base_name
 
 def clean_medicine_name(medicine_name: str) -> str:
     """
-    Clean medicine name by removing common prefixes and normalizing.
+    Clean and normalize medicine name for better matching.
     
     Args:
         medicine_name (str): Raw medicine name
@@ -103,46 +98,26 @@ def clean_medicine_name(medicine_name: str) -> str:
     Returns:
         str: Cleaned medicine name
     """
-    print(f"[DEBUG] [clean_medicine_name] Cleaning: '{medicine_name}'")
+    if not medicine_name:
+        return ""
     
-    # Common prefixes to remove
-    prefixes_to_remove = ['of ', 'the ', 'a ', 'an ', 'what is ', 'what\'s ', 'what are ', 'what is the ', 'what are the ']
+    # Convert to lowercase
+    cleaned = medicine_name.lower()
     
-    # Common phrases to remove that are not medicine names
-    phrases_to_remove = [
-        'brands of ', 'brand of ', 'brand name ', 'brand names of ',
-        'what is the brands of ', 'what are the brands of ',
-        'what is the brand name of ', 'what are the brand names of ',
-        'usage of ', 'used for ', 'indication of ', 'purpose of ',
-        'price of ', 'cost of ', 'how much is ', 'how much does '
-    ]
-    
-    cleaned_name = medicine_name.lower().strip()
-    
-    # Remove phrases first
-    for phrase in phrases_to_remove:
-        if cleaned_name.startswith(phrase):
-            cleaned_name = cleaned_name[len(phrase):].strip()
-            print(f"[DEBUG] [clean_medicine_name] Removed phrase '{phrase}' -> '{cleaned_name}'")
-    
-    # Then remove prefixes
+    # Remove common prefixes and suffixes
+    prefixes_to_remove = ['dr.', 'doctor', 'prof.', 'professor']
     for prefix in prefixes_to_remove:
-        if cleaned_name.startswith(prefix):
-            cleaned_name = cleaned_name[len(prefix):].strip()
-            print(f"[DEBUG] [clean_medicine_name] Removed prefix '{prefix}' -> '{cleaned_name}'")
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
     
-    # Remove common words that are not medicine names
-    common_words_to_remove = ['brands', 'brand', 'names', 'name', 'contain', 'contains', 'usage', 'used', 'indication', 'purpose', 'price', 'cost']
-    words = cleaned_name.split()
-    filtered_words = [word for word in words if word.lower() not in common_words_to_remove]
-    cleaned_name = ' '.join(filtered_words).strip()
+    # Remove extra spaces and normalize
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     
-    print(f"[DEBUG] [clean_medicine_name] Final cleaned name: '{cleaned_name}'")
-    return cleaned_name
+    return cleaned
 
 @medicine_bp.route('/medicines', methods=['GET'])
 def get_medicines():
-    """Get all medicines from the database"""
+    """Get all medicines from database"""
     medicines = Medicine.query.all()
     return jsonify([medicine.to_dict() for medicine in medicines])
 
@@ -162,42 +137,45 @@ def search_medicines():
 
 @medicine_bp.route('/medicines/api-search', methods=['GET'])
 def api_search_medicines():
-    """Search medicines using external API for real-time data"""
+    """Search medicines using external API for real-time data, with comprehensive medical information for every product."""
     query = request.args.get('q', '')
     if not query:
         return jsonify({'error': 'Query parameter q is required'}), 400
     
+    cleaned_query = clean_medicine_name(query)
+    cleaned_query = re.sub(r'\b\d+\b', '', cleaned_query).strip()
+    
     # Get real-time data from external API
     success, products, error = medicine_api.search_and_get_details(query)
-    
     if not success:
         return jsonify({'error': error}), 500
     
-    # Format the response
-    formatted_products = []
+    # Filter products for relevance
+    filtered_products = []
     for product in products:
-        # Get usage information using the fallback chain
+        trade_name = (product.get('trade_name') or product.get('name') or '').lower()
+        generic_name = (product.get('generic_name') or '').lower()
+        # Substring match or fuzzy match >80
+        if cleaned_query in trade_name or cleaned_query in generic_name or \
+           fuzz.partial_ratio(cleaned_query, trade_name) > 80 or fuzz.partial_ratio(cleaned_query, generic_name) > 80:
+            filtered_products.append(product)
+    
+    # If no filtered products, fallback to all products
+    if not filtered_products:
+        filtered_products = products
+    
+    # Format the response with comprehensive information for every product
+    formatted_products = []
+    for product in filtered_products:
         product_name = product.get('name', '')
         generic_name = extract_generic_name_from_trade_name(product_name)
-        usage_info = get_usage_generic(product_name, generic_name)
-        
-        # If no usage found, try with the original search query
-        if not usage_info:
-            usage_info = get_usage_generic(query, generic_name)
-        
-        # If still no usage, fall back to local database
-        if not usage_info:
-            try:
-                local_usage = get_local_usage(query)
-                if local_usage:
-                    usage_info = local_usage
-            except Exception as e:
-                pass
-        
-        # Final fallback
-        if not usage_info:
-            usage_info = "Usage information not available"
-        
+        # Get comprehensive medical information for every product
+        medical_info = get_comprehensive_medical_info(product_name, generic_name, query)
+        # Merge/override with any info already present in the product
+        if 'components' in product and product['components']:
+            medical_info['active_ingredients'] = product['components']
+        if 'desc' in product and product['desc']:
+            medical_info['usage'] = product['desc']
         formatted_product = {
             'id': product.get('id'),
             'trade_name': product.get('name', ''),
@@ -207,9 +185,10 @@ def api_search_medicines():
             'description': product.get('desc', ''),
             'components': product.get('components', []),
             'company': product.get('company', ''),
-            'usage': usage_info,  # Add usage information
+            'usage': medical_info['usage'],
             'source': 'External API',
-            'last_updated': time.time()
+            'last_updated': time.time(),
+            'medical_info': medical_info
         }
         formatted_products.append(formatted_product)
     
@@ -219,275 +198,605 @@ def api_search_medicines():
         'count': len(formatted_products)
     })
 
-
-
-@medicine_bp.route('/medicines/api-sync', methods=['POST'])
-def sync_medicine_from_api():
-    """Sync a medicine from external API to local database"""
-    data = request.get_json()
-    medicine_name = data.get('name', '')
+def get_comprehensive_medical_info(trade_name: str, generic_name: str, original_query: str) -> dict:
+    """
+    Get comprehensive medical information for a medicine including:
+    - Active ingredients
+    - Usage/indications
+    - Contraindications
+    - Warnings
+    - Side effects
+    - Dosage information
+    - Drug interactions
+    """
+    medical_info = {
+        'active_ingredients': [],
+        'usage': '',
+        'contraindications': '',
+        'warnings': '',
+        'side_effects': '',
+        'dosage': '',
+        'drug_interactions': '',
+        'generic_name': generic_name,
+        'drug_class': '',
+        'pregnancy_category': '',
+        'breastfeeding': '',
+        'pediatric_use': '',
+        'geriatric_use': ''
+    }
     
-    if not medicine_name:
-        return jsonify({'error': 'Medicine name is required'}), 400
+    # Try to get information from multiple sources
+    medicine_name = trade_name or original_query
     
-    # Search for medicine in external API
-    success, products, error = medicine_api.search_and_get_details(medicine_name)
+    # 1. Get active ingredients from local database
+    active_ingredients = get_active_ingredients(medicine_name)
+    if active_ingredients:
+        medical_info['active_ingredients'] = active_ingredients
     
-    if not success:
-        return jsonify({'error': error}), 500
+    # 2. Get usage information from fallback chain
+    usage_info = get_usage_generic(medicine_name, generic_name)
+    if usage_info:
+        medical_info['usage'] = usage_info
     
-    if not products:
-        return jsonify({'error': 'No medicines found with that name'}), 404
-    
-    # Use the first result
-    product = products[0]
-    
-    # Check if medicine already exists in database
-    existing_medicine = Medicine.query.filter_by(api_id=product.get('id')).first()
-    
-    if existing_medicine:
-        # Update existing medicine
-        existing_medicine.trade_name = product.get('name', existing_medicine.trade_name)
-        existing_medicine.price = product.get('price', existing_medicine.price)
-        existing_medicine.api_image = product.get('image', existing_medicine.api_image)
-        existing_medicine.api_description = product.get('desc', existing_medicine.api_description)
-        existing_medicine.api_components = json.dumps(product.get('components', []))
-        existing_medicine.api_company = product.get('company', existing_medicine.api_company)
-        
-        # Get usage information from RxNav API
-        try:
-            success, drug_info, error = rxnav_api.get_drug_info(product.get('name', ''))
-            if success and drug_info.get('usage_text'):
-                existing_medicine.api_usage = drug_info['usage_text']
-        except Exception as e:
-            # If RxNav fails, keep existing usage info
-            pass
-        
-        existing_medicine.last_updated = db.func.now()
-        existing_medicine.source = 'External API'
-        
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Medicine updated successfully',
-            'medicine': existing_medicine.to_dict()
-        })
-    else:
-        # Create new medicine
-        # Get usage information from RxNav API
-        usage_info = None
-        try:
-            success, drug_info, error = rxnav_api.get_drug_info(product.get('name', ''))
-            if success and drug_info.get('usage_text'):
-                usage_info = drug_info['usage_text']
-        except Exception as e:
-            # If RxNav fails, continue without usage info
-            pass
-        
-        new_medicine = Medicine(
-            trade_name=product.get('name', ''),
-            price=product.get('price'),
-            api_id=product.get('id'),
-            api_image=product.get('image'),
-            api_description=product.get('desc'),
-            api_components=json.dumps(product.get('components', [])),
-            api_company=product.get('company'),
-            api_usage=usage_info,
-            source='External API'
-        )
-        
-        db.session.add(new_medicine)
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Medicine added successfully',
-            'medicine': new_medicine.to_dict()
-        }), 201
-
-@medicine_bp.route('/medicines', methods=['POST'])
-def add_medicine():
-    """Add a new medicine to the database"""
-    data = request.get_json()
-    
-    if not data or 'trade_name' not in data:
-        return jsonify({'error': 'trade_name is required'}), 400
-    
-    medicine = Medicine(
-        trade_name=data['trade_name'],
-        generic_name=data.get('generic_name'),
-        reg_no=data.get('reg_no'),
-        applicant=data.get('applicant'),
-        price=data.get('price'),
-        currency=data.get('currency', 'EGP'),
-        source=data.get('source')
-    )
-    
-    db.session.add(medicine)
-    db.session.commit()
-    
-    return jsonify(medicine.to_dict()), 201
-
-@medicine_bp.route('/medicines/<int:medicine_id>', methods=['PUT'])
-def update_medicine(medicine_id):
-    """Update medicine price and information"""
-    medicine = Medicine.query.get_or_404(medicine_id)
-    data = request.get_json()
-    
-    if 'trade_name' in data:
-        medicine.trade_name = data['trade_name']
-    if 'generic_name' in data:
-        medicine.generic_name = data['generic_name']
-    if 'reg_no' in data:
-        medicine.reg_no = data['reg_no']
-    if 'applicant' in data:
-        medicine.applicant = data['applicant']
-    if 'price' in data:
-        medicine.price = data['price']
-    if 'currency' in data:
-        medicine.currency = data['currency']
-    if 'source' in data:
-        medicine.source = data['source']
-    
-    medicine.last_updated = db.func.now()
-    db.session.commit()
-    
-    return jsonify(medicine.to_dict())
-
-@medicine_bp.route('/medicines/<int:medicine_id>', methods=['DELETE'])
-def delete_medicine(medicine_id):
-    """Delete a medicine from the database"""
-    medicine = Medicine.query.get_or_404(medicine_id)
-    db.session.delete(medicine)
-    db.session.commit()
-    
-    return jsonify({'message': 'Medicine deleted successfully'})
-
-@medicine_bp.route('/medicines/refresh-prices', methods=['POST'])
-def refresh_prices():
-    """Refresh prices for medicines using external API"""
-    medicines = Medicine.query.filter(Medicine.api_id.isnot(None)).all()
-    updated_count = 0
-    errors = []
-    
-    for medicine in medicines:
-        try:
-            # Get updated information from API
-            success, details, error = medicine_api.get_medicine_details(medicine.api_id)
+    # 3. Get detailed information from RxNav API
+    try:
+        success, drug_info, error = rxnav_api.get_drug_info(medicine_name)
+        if success and drug_info:
+            # Extract additional information from RxNav
+            if drug_info.get('usage_text'):
+                medical_info['usage'] = drug_info['usage_text']
             
-            if success and details:
-                # Update medicine with new data
-                medicine.trade_name = details.get('name', medicine.trade_name)
-                medicine.price = details.get('price', medicine.price)
-                medicine.api_image = details.get('image', medicine.api_image)
-                medicine.api_description = details.get('desc', medicine.api_description)
-                medicine.api_components = json.dumps(details.get('components', []))
-                medicine.api_company = details.get('company', medicine.api_company)
-                
-                # Get usage information from RxNav API
-                try:
-                    success, drug_info, error = rxnav_api.get_drug_info(medicine.trade_name)
-                    if success and drug_info.get('usage_text'):
-                        medicine.api_usage = drug_info['usage_text']
-                except Exception as e:
-                    # If RxNav fails, keep existing usage info
-                    pass
-                
-                medicine.last_updated = db.func.now()
-                updated_count += 1
-            else:
-                errors.append(f"Failed to update {medicine.trade_name}: {error}")
-            
-            # Add delay to be respectful to the API
-            time.sleep(0.3)
-            
-        except Exception as e:
-            errors.append(f"Error updating {medicine.trade_name}: {str(e)}")
+            # Get drug class and other properties
+            rxcui = drug_info.get('rxcui')
+            if rxcui:
+                additional_info = get_rxnav_detailed_info(rxcui)
+                medical_info.update(additional_info)
+    except Exception as e:
+        print(f"[DEBUG] RxNav API error for {medicine_name}: {e}")
     
-    db.session.commit()
+    # 4. Get additional information from openFDA API
+    try:
+        fda_info = get_openfda_detailed_info(medicine_name, generic_name)
+        if fda_info:
+            medical_info.update(fda_info)
+    except Exception as e:
+        print(f"[DEBUG] openFDA API error for {medicine_name}: {e}")
     
-    return jsonify({
-        'message': f'Refreshed prices for {updated_count} medicines',
-        'updated_count': updated_count,
-        'errors': errors
-    })
+    # 5. Get additional information from DailyMed API
+    try:
+        dailymed_info = get_dailymed_detailed_info(medicine_name, generic_name)
+        if dailymed_info:
+            medical_info.update(dailymed_info)
+    except Exception as e:
+        print(f"[DEBUG] DailyMed API error for {medicine_name}: {e}")
+    
+    return medical_info
 
-@medicine_bp.route('/medicines/api-details/<medicine_id>', methods=['GET'])
-def get_medicine_api_details(medicine_id):
-    """Get detailed information about a medicine from external API"""
-    success, details, error = medicine_api.get_medicine_details(medicine_id)
+def get_active_ingredients(medicine_name: str) -> list:
+    """Get active ingredients for a medicine from local database."""
+    # Local database of active ingredients (including Arabic variations)
+    active_ingredients_db = {
+        'lipitor': ['Atorvastatin'],
+        'ليبيتور': ['Atorvastatin'],
+        'atorvastatin': ['Atorvastatin'],
+        'panadol': ['Paracetamol', 'Acetaminophen'],
+        'بانادول': ['Paracetamol', 'Acetaminophen'],
+        'paracetamol': ['Paracetamol', 'Acetaminophen'],
+        'acetaminophen': ['Acetaminophen', 'Paracetamol'],
+        'advil': ['Ibuprofen'],
+        'motrin': ['Ibuprofen'],
+        'ibuprofen': ['Ibuprofen'],
+        'brufen': ['Ibuprofen'],
+        'aspirin': ['Acetylsalicylic acid'],
+        'claritine': ['Loratadine'],
+        'claritin': ['Loratadine'],
+        'claratyne': ['Loratadine'],
+        'loratadine': ['Loratadine'],
+        'prozac': ['Fluoxetine'],
+        'fluoxetine': ['Fluoxetine'],
+        'zoloft': ['Sertraline'],
+        'sertraline': ['Sertraline'],
+        'augmentin': ['Amoxicillin', 'Clavulanic acid'],
+        'amoxicillin': ['Amoxicillin'],
+        'voltaren': ['Diclofenac'],
+        'diclofenac': ['Diclofenac'],
+        'rivo': ['Rivaroxaban'],
+        'rivaroxaban': ['Rivaroxaban'],
+        'xarelto': ['Rivaroxaban'],
+        'metformin': ['Metformin'],
+        'glucophage': ['Metformin'],
+        'cidophage': ['Metformin'],
+        'ozempic': ['Semaglutide'],
+        'semaglutide': ['Semaglutide'],
+        'lantus': ['Insulin glargine'],
+        'insulin glargine': ['Insulin glargine'],
+        'humalog': ['Insulin lispro'],
+        'insulin lispro': ['Insulin lispro'],
+        'concor': ['Bisoprolol'],
+        'bisoprolol': ['Bisoprolol'],
+        'norvasc': ['Amlodipine'],
+        'amlor': ['Amlodipine'],
+        'amlodipine': ['Amlodipine'],
+        'zocor': ['Simvastatin'],
+        'simvastatin': ['Simvastatin'],
+        'crestor': ['Rosuvastatin'],
+        'rosuvastatin': ['Rosuvastatin'],
+        'plavix': ['Clopidogrel'],
+        'clopidogrel': ['Clopidogrel'],
+        'zyrtec': ['Cetirizine'],
+        'cetirizine': ['Cetirizine'],
+        'alerid': ['Cetirizine'],
+        'allegra': ['Fexofenadine'],
+        'fexofenadine': ['Fexofenadine'],
+        'benadryl': ['Diphenhydramine'],
+        'diphenhydramine': ['Diphenhydramine'],
+        
+        # FIXED: Added missing medicines from user's questions
+        'protonix': ['Pantoprazole'],
+        'pantoprazole': ['Pantoprazole'],
+        'omeprazole': ['Omeprazole'],
+        'prilosec': ['Omeprazole'],
+        'losec': ['Omeprazole'],
+        'nexium': ['Esomeprazole'],
+        'esomeprazole': ['Esomeprazole'],
+        'zantac': ['Ranitidine'],
+        'ranitidine': ['Ranitidine'],
+        'levothyroxine': ['Levothyroxine'],
+        'synthroid': ['Levothyroxine'],
+        'montelukast': ['Montelukast'],
+        'singulair': ['Montelukast'],
+        'lisinopril': ['Lisinopril'],
+        'hydrochlorothiazide': ['Hydrochlorothiazide'],
+        'metoprolol': ['Metoprolol'],
+        'carvedilol': ['Carvedilol'],
+        'warfarin': ['Warfarin'],
+        'coumadin': ['Warfarin'],
+        'digoxin': ['Digoxin'],
+        'furosemide': ['Furosemide'],
+        'lasix': ['Furosemide'],
+        'naproxen': ['Naproxen'],
+        'aleve': ['Naproxen'],
+        'tylenol': ['Acetaminophen'],
+        'celebrex': ['Celecoxib'],
+        'celecoxib': ['Celecoxib'],
+        'losartan': ['Losartan'],
+        'cozaar': ['Losartan'],
+        'valsartan': ['Valsartan'],
+        'diovan': ['Valsartan'],
+        
+        # Antipsychotics
+        'zyprexa': ['Olanzapine'],
+        'olanzapine': ['Olanzapine'],
+        'abilify': ['Aripiprazole'],
+        'aripiprazole': ['Aripiprazole'],
+        'risperdal': ['Risperidone'],
+        'risperidone': ['Risperidone'],
+        'seroquel': ['Quetiapine'],
+        'quetiapine': ['Quetiapine'],
+        
+        # Other antidepressants
+        'paxil': ['Paroxetine'],
+        'paroxetine': ['Paroxetine'],
+        'celexa': ['Citalopram'],
+        'citalopram': ['Citalopram'],
+        'lexapro': ['Escitalopram'],
+        'escitalopram': ['Escitalopram'],
+        'wellbutrin': ['Bupropion'],
+        'bupropion': ['Bupropion'],
+        'effexor': ['Venlafaxine'],
+        'venlafaxine': ['Venlafaxine'],
+        'cymbalta': ['Duloxetine'],
+        'duloxetine': ['Duloxetine'],
+        
+        # Nasal sprays and allergy medications - FIXED: Added Flonase and related medicines
+        'flonase': ['Fluticasone propionate'],
+        'fluticasone': ['Fluticasone propionate'],
+        'nasacort': ['Triamcinolone acetonide'],
+        'triamcinolone': ['Triamcinolone acetonide'],
+        'rhinocort': ['Budesonide'],
+        'budesonide': ['Budesonide'],
+        'nasonex': ['Mometasone furoate'],
+        'mometasone': ['Mometasone furoate'],
+        'afrin': ['Oxymetazoline'],
+        'oxymetazoline': ['Oxymetazoline'],
+        'sudafed': ['Pseudoephedrine'],
+        'pseudoephedrine': ['Pseudoephedrine'],
+        'claritin-d': ['Loratadine', 'Pseudoephedrine'],
+        'mucinex': ['Guaifenesin'],
+        'guaifenesin': ['Guaifenesin'],
+        
+        # Ibuprofen and common misspellings/brands
+        'ibuprofen': ['Ibuprofen'],
+        'أيبوبروفين': ['أيبوبروفين'],
+        'الأيبوبروفين': ['الأيبوبروفين'],
+        'brufen': ['Brufen'],
+        'ibubrufen': ['Ibubrufen'],
+        'ibuprufen': ['Ibuprufen'],
+        'ibuprophen': ['Ibuprophen'],
+        'ibuprofene': ['Ibuprofene'],
+        'ibufren': ['Ibufren'],
+        'epipen': 'epinephrine',
+        'toprol xl': 'metoprolol',
+        'toprol': 'metoprolol',
+    }
     
-    if not success:
-        return jsonify({'error': error}), 500
+    clean_name = medicine_name.lower().strip()
     
-    if not details:
-        return jsonify({'error': 'Medicine not found'}), 404
+    # Check exact match
+    if clean_name in active_ingredients_db:
+        return active_ingredients_db[clean_name]
     
-    return jsonify({
-        'success': True,
-        'medicine': details
-    })
+    # Check partial matches
+    for key, ingredients in active_ingredients_db.items():
+        if clean_name in key or key in clean_name:
+            return ingredients
+    
+    # Extract base name from Arabic medicine names
+    if is_arabic_text(clean_name):
+        # Remove common Arabic words and dosage info
+        arabic_clean = re.sub(r'\d+\s*مجم', '', clean_name)  # Remove mg dosage
+        arabic_clean = re.sub(r'\d+\s*قرص', '', arabic_clean)  # Remove tablet count
+        arabic_clean = re.sub(r'\d+\s*اقراص', '', arabic_clean)  # Remove tablet count (plural)
+        arabic_clean = re.sub(r'\s+', ' ', arabic_clean).strip()  # Clean spaces
+        
+        # Check if cleaned Arabic name matches any known medicine
+        if arabic_clean in active_ingredients_db:
+            return active_ingredients_db[arabic_clean]
+    
+    return []
 
-@medicine_bp.route('/medicines/sample-data', methods=['POST'])
-def add_sample_data():
-    """Add sample Egyptian medicines data"""
-    sample_medicines = [
-        {
-            'trade_name': 'Panadol',
-            'generic_name': 'Paracetamol',
-            'reg_no': 'EG-12345',
-            'applicant': 'GSK Egypt',
-            'price': 15.50,
-            'source': 'Sample Data'
-        },
-        {
-            'trade_name': 'Augmentin',
-            'generic_name': 'Amoxicillin/Clavulanic Acid',
-            'reg_no': 'EG-23456',
-            'applicant': 'GSK Egypt',
-            'price': 85.00,
-            'source': 'Sample Data'
-        },
-        {
-            'trade_name': 'Voltaren',
-            'generic_name': 'Diclofenac',
-            'reg_no': 'EG-34567',
-            'applicant': 'Novartis Egypt',
-            'price': 25.75,
-            'source': 'Sample Data'
-        },
-        {
-            'trade_name': 'Concor',
-            'generic_name': 'Bisoprolol',
-            'reg_no': 'EG-45678',
-            'applicant': 'Merck Egypt',
-            'price': 45.00,
-            'source': 'Sample Data'
-        },
-        {
-            'trade_name': 'Lipitor',
-            'generic_name': 'Atorvastatin',
-            'reg_no': 'EG-56789',
-            'applicant': 'Pfizer Egypt',
-            'price': 120.00,
-            'source': 'Sample Data'
+def get_rxnav_detailed_info(rxcui: str) -> dict:
+    """Get detailed information from RxNav API."""
+    try:
+        url = f"https://rxnav.nlm.nih.gov/REST/rxcui/{rxcui}/allProperties.json"
+        response = requests.get(url, params={"prop": "all"}, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            info = {}
+            
+            if 'propConceptGroup' in data and 'propConcept' in data['propConceptGroup']:
+                for prop in data['propConceptGroup']['propConcept']:
+                    prop_name = prop.get('propName', '').lower()
+                    prop_value = prop.get('propValue', '')
+                    
+                    if 'contraindication' in prop_name:
+                        info['contraindications'] = prop_value
+                    elif 'warning' in prop_name:
+                        info['warnings'] = prop_value
+                    elif 'side effect' in prop_name or 'adverse' in prop_name:
+                        info['side_effects'] = prop_value
+                    elif 'dosage' in prop_name or 'dose' in prop_name:
+                        info['dosage'] = prop_value
+                    elif 'interaction' in prop_name:
+                        info['drug_interactions'] = prop_value
+                    elif 'drug class' in prop_name or 'therapeutic class' in prop_name:
+                        info['drug_class'] = prop_value
+                    elif 'pregnancy' in prop_name:
+                        info['pregnancy_category'] = prop_value
+                    elif 'breastfeeding' in prop_name or 'lactation' in prop_name:
+                        info['breastfeeding'] = prop_value
+                    elif 'pediatric' in prop_name or 'children' in prop_name:
+                        info['pediatric_use'] = prop_value
+                    elif 'geriatric' in prop_name or 'elderly' in prop_name:
+                        info['geriatric_use'] = prop_value
+            
+            return info
+    except Exception as e:
+        print(f"[DEBUG] RxNav detailed info error: {e}")
+    
+    return {}
+
+def get_openfda_detailed_info(medicine_name: str, generic_name: str) -> dict:
+    """Get detailed information from openFDA API."""
+    try:
+        # Try with generic name first, then trade name
+        search_name = generic_name if generic_name else medicine_name
+        
+        url = "https://api.fda.gov/drug/label.json"
+        params = {
+            'search': f'openfda.generic_name:{search_name}',
+            'limit': 1
         }
-    ]
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if data.get('results'):
+                result = data['results'][0]
+                info = {}
+                
+                # Extract various sections
+                if 'contraindications' in result:
+                    info['contraindications'] = result['contraindications'][0] if result['contraindications'] else ''
+                
+                if 'warnings' in result:
+                    info['warnings'] = result['warnings'][0] if result['warnings'] else ''
+                
+                if 'adverse_reactions' in result:
+                    info['side_effects'] = result['adverse_reactions'][0] if result['adverse_reactions'] else ''
+                
+                if 'dosage_and_administration' in result:
+                    info['dosage'] = result['dosage_and_administration'][0] if result['dosage_and_administration'] else ''
+                
+                if 'drug_interactions' in result:
+                    info['drug_interactions'] = result['drug_interactions'][0] if result['drug_interactions'] else ''
+                
+                if 'pregnancy' in result:
+                    info['pregnancy_category'] = result['pregnancy'][0] if result['pregnancy'] else ''
+                
+                if 'nursing_mothers' in result:
+                    info['breastfeeding'] = result['nursing_mothers'][0] if result['nursing_mothers'] else ''
+                
+                if 'pediatric_use' in result:
+                    info['pediatric_use'] = result['pediatric_use'][0] if result['pediatric_use'] else ''
+                
+                if 'geriatric_use' in result:
+                    info['geriatric_use'] = result['geriatric_use'][0] if result['geriatric_use'] else ''
+                
+                return info
+    except Exception as e:
+        print(f"[DEBUG] openFDA detailed info error: {e}")
     
-    added_count = 0
-    for med_data in sample_medicines:
-        # Check if medicine already exists
-        existing = Medicine.query.filter_by(trade_name=med_data['trade_name']).first()
-        if not existing:
-            medicine = Medicine(**med_data)
-            db.session.add(medicine)
-            added_count += 1
+    return {}
+
+def get_dailymed_detailed_info(medicine_name: str, generic_name: str) -> dict:
+    """Get detailed information from DailyMed API."""
+    try:
+        # Try with generic name first, then trade name
+        search_name = generic_name if generic_name else medicine_name
+        
+        # Step 1: Get drug names to find setid
+        url1 = f"https://dailymed.nlm.nih.gov/dailymed/services/v2/drugnames.json"
+        params1 = {'drug_name': search_name.lower()}
+        
+        response1 = requests.get(url1, params=params1, timeout=10)
+        
+        if response1.status_code == 200:
+            data1 = response1.json()
+            
+            if data1.get('data'):
+                setid = data1['data'][0].get('setid')
+                
+                if setid:
+                    # Step 2: Get detailed information
+                    url2 = f"https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/{setid}.json"
+                    response2 = requests.get(url2, timeout=10)
+                    
+                    if response2.status_code == 200:
+                        data2 = response2.json()
+                        info = {}
+                        
+                        # Extract various sections from the label
+                        if 'openfda' in data2:
+                            openfda = data2['openfda']
+                            
+                            if 'generic_name' in openfda:
+                                info['generic_name'] = openfda['generic_name'][0] if openfda['generic_name'] else ''
+                            if 'brand_name' in openfda:
+                                info['brand_name'] = openfda['brand_name'][0] if openfda['brand_name'] else ''
+                        
+                        # Extract active ingredients
+                        if 'active_ingredient' in data2:
+                            info['active_ingredients'] = data2['active_ingredient']
+                        
+                        # Extract other sections
+                        sections = data2.get('sections', [])
+                        for section in sections:
+                            title = section.get('title', '').lower()
+                            content = section.get('content', '')
+                            
+                            if 'contraindication' in title:
+                                info['contraindications'] = content
+                            elif 'warning' in title:
+                                info['warnings'] = content
+                            elif 'adverse' in title or 'side effect' in title:
+                                info['side_effects'] = content
+                            elif 'dosage' in title:
+                                info['dosage'] = content
+                            elif 'interaction' in title:
+                                info['drug_interactions'] = content
+                            elif 'pregnancy' in title:
+                                info['pregnancy_category'] = content
+                            elif 'nursing' in title or 'breastfeeding' in title:
+                                info['breastfeeding'] = content
+                            elif 'pediatric' in title:
+                                info['pediatric_use'] = content
+                            elif 'geriatric' in title:
+                                info['geriatric_use'] = content
+                        
+                        return info
+    except Exception as e:
+        print(f"[DEBUG] DailyMed detailed info error: {e}")
     
-    db.session.commit()
+    return {}
+
+def extract_generic_name_from_trade_name(trade_name: str) -> str:
+    """
+    Extract generic name from trade name using common patterns.
+    This is a simple heuristic and may not work for all cases.
     
-    return jsonify({
-        'message': f'Added {added_count} sample medicines',
-        'added_count': added_count
-    })
+    Args:
+        trade_name (str): Trade name of the medicine
+        
+    Returns:
+        str: Extracted generic name or empty string
+    """
+    # Common medicine mappings (including Arabic variations)
+    medicine_mappings = {
+        # Pain relievers
+        'panadol': 'paracetamol',
+        'بانادول': 'paracetamol',
+        'tylenol': 'paracetamol',
+        'acetaminophen': 'paracetamol',
+        'advil': 'ibuprofen',
+        'motrin': 'ibuprofen',
+        'aspirin': 'acetylsalicylic acid',
+        
+        # Cholesterol medications
+        'lipitor': 'atorvastatin',
+        'ليبيتور': 'atorvastatin',
+        'zocor': 'simvastatin',
+        'crestor': 'rosuvastatin',
+        'atorvastatin': 'atorvastatin',  # Generic name mapping
+        'simvastatin': 'simvastatin',   # Generic name mapping
+        'rosuvastatin': 'rosuvastatin', # Generic name mapping
+        
+        # Blood thinners
+        'plavix': 'clopidogrel',
+        'warfarin': 'warfarin',
+        'coumadin': 'warfarin',
+        
+        # Antidepressants
+        'zoloft': 'sertraline',
+        'prozac': 'fluoxetine',
+        'paxil': 'paroxetine',
+        'celexa': 'citalopram',
+        'lexapro': 'escitalopram',
+        'wellbutrin': 'bupropion',
+        'effexor': 'venlafaxine',
+        'cymbalta': 'duloxetine',
+        
+        # Antipsychotics
+        'zyprexa': 'olanzapine',
+        'abilify': 'aripiprazole',
+        'risperdal': 'risperidone',
+        'seroquel': 'quetiapine',
+        'geodon': 'ziprasidone',
+        'invega': 'paliperidone',
+        'latuda': 'lurasidone',
+        'rexulti': 'brexpiprazole',
+        'vraylar': 'cariprazine',
+        'fanapt': 'iloperidone',
+        'saphris': 'asenapine',
+        
+        # Antihistamines
+        'claritine': 'loratadine',
+        'claritin': 'loratadine',
+        'claratyne': 'loratadine',
+        'allegra': 'fexofenadine',
+        'zyrtec': 'cetirizine',
+        'benadryl': 'diphenhydramine',
+        
+        # Diabetes medications
+        'ozempic': 'semaglutide',
+        'lantus': 'insulin glargine',
+        'humalog': 'insulin lispro',
+        'glucophage': 'metformin',
+        'cidophage': 'metformin',
+        'metformin': 'metformin',   # Generic name mapping
+        
+        # Blood pressure medications
+        'concor': 'bisoprolol',
+        'norvasc': 'amlodipine',
+        'amlor': 'amlodipine',
+        'amlodipine': 'amlodipine', # Generic name mapping
+        'lisinopril': 'lisinopril', # Generic name mapping
+        'hydrochlorothiazide': 'hydrochlorothiazide', # Generic name mapping
+        'metoprolol': 'metoprolol', # Generic name mapping
+        'carvedilol': 'carvedilol', # Generic name mapping
+        
+        # Blood thinners
+        'rivo': 'rivaroxaban',
+        'xarelto': 'rivaroxaban',
+        
+        # Anti-inflammatory
+        'voltaren': 'diclofenac',
+        'cataflam': 'diclofenac',
+        
+        # Antibiotics
+        'augmentin': 'amoxicillin',
+        
+        # Proton pump inhibitors / Acid reducers - FIXED: Added missing medicines
+        'protonix': 'pantoprazole',
+        'pantoprazole': 'pantoprazole', # Generic name mapping
+        'prilosec': 'omeprazole',
+        'losec': 'omeprazole',
+        'omeprazole': 'omeprazole',   # Generic name mapping
+        'nexium': 'esomeprazole',
+        'esomeprazole': 'esomeprazole', # Generic name mapping
+        'zantac': 'ranitidine',
+        'ranitidine': 'ranitidine',   # Generic name mapping
+        
+        # Thyroid medications - FIXED: Added missing medicines
+        'synthroid': 'levothyroxine',
+        'levothyroxine': 'levothyroxine', # Generic name mapping
+        
+        # Asthma/Allergy medications - FIXED: Added missing medicines
+        'singulair': 'montelukast',
+        'montelukast': 'montelukast',   # Generic name mapping
+        
+        # Other cardiac medications
+        'digoxin': 'digoxin',         # Generic name mapping
+        'furosemide': 'furosemide',   # Generic name mapping
+        'lasix': 'furosemide',
+        
+        # Other common medicines
+        'brufen': 'ibuprofen',
+        'alerid': 'cetirizine',
+        'ibuprofen': 'ibuprofen',     # Generic name mapping
+        'cetirizine': 'cetirizine',   # Generic name mapping
+        'naproxen': 'naproxen',       # Generic name mapping
+        'aleve': 'naproxen',
+        
+        # Nasal sprays - FIXED: Proper generic name mappings
+        'flonase': 'fluticasone propionate',
+        'fluticasone': 'fluticasone propionate',
+        'nasacort': 'triamcinolone acetonide',
+        'triamcinolone': 'triamcinolone acetonide',
+        'rhinocort': 'budesonide',
+        'budesonide': 'budesonide',
+        'nasonex': 'mometasone furoate',
+        'mometasone': 'mometasone furoate',
+        'afrin': 'oxymetazoline',
+        'oxymetazoline': 'oxymetazoline',
+        'sudafed': 'pseudoephedrine',
+        'pseudoephedrine': 'pseudoephedrine',
+        'claritin-d': ['Loratadine', 'Pseudoephedrine'],
+        'mucinex': ['Guaifenesin'],
+        'guaifenesin': ['Guaifenesin'],
+        
+        # Ibuprofen and common misspellings/brands
+        'ibuprofen': ['Ibuprofen'],
+        'أيبوبروفين': ['أيبوبروفين'],
+        'الأيبوبروفين': ['الأيبوبروفين'],
+        'brufen': ['Brufen'],
+        'ibubrufen': ['Ibubrufen'],
+        'ibuprufen': ['Ibuprufen'],
+        'ibuprophen': ['Ibuprophen'],
+        'ibuprofene': ['Ibuprofene'],
+        'ibufren': ['Ibufren'],
+        'epipen': 'epinephrine',
+        'toprol xl': 'metoprolol',
+        'toprol': 'metoprolol',
+    }
+    
+    clean_name = trade_name.lower().strip()
+    
+    # Check exact match
+    if clean_name in medicine_mappings:
+        return medicine_mappings[clean_name]
+    
+    # Check partial matches
+    for trade, generic in medicine_mappings.items():
+        if clean_name in trade or trade in clean_name:
+            return generic
+    
+    # Extract base name from Arabic medicine names
+    if is_arabic_text(clean_name):
+        # Remove common Arabic words and dosage info
+        arabic_clean = re.sub(r'\d+\s*مجم', '', clean_name)  # Remove mg dosage
+        arabic_clean = re.sub(r'\d+\s*قرص', '', arabic_clean)  # Remove tablet count
+        arabic_clean = re.sub(r'\d+\s*اقراص', '', arabic_clean)  # Remove tablet count (plural)
+        arabic_clean = re.sub(r'\s+', ' ', arabic_clean).strip()  # Clean spaces
+        
+        # Check if cleaned Arabic name matches any known medicine
+        if arabic_clean in medicine_mappings:
+            return medicine_mappings[arabic_clean]
+    
+    return ""
 
 # Global conversation memory (in production, use Redis or database)
 conversation_context = {}
@@ -511,15 +820,87 @@ def crewai_chat():
     print(f"[DEBUG] Final reply: {reply}")  # Debug print
     return jsonify({"reply": reply})
 
-
 def get_medicine_usage(medicine_name):
+    """Get medicine usage information with API-first approach (RxNav, OpenFDA, DailyMed, then local DB)."""
+    print(f"[DEBUG] [get_medicine_usage] Getting usage for: {medicine_name}")
+    errors = []
+    # PRIORITY 1: Try RxNav API first
+    try:
+        success, drug_info, error = rxnav_api.get_drug_info(medicine_name)
+        if success and drug_info:
+            print(f"[DEBUG] [get_medicine_usage] Found data in RxNav API")
+            if drug_info.get('usage_text') and drug_info['usage_text'] != 'Usage information not available':
+                print(f"[DEBUG] [get_medicine_usage] Found detailed usage in RxNav API")
+                return f"{medicine_name.title()} is used for: {drug_info['usage_text']}"
+            elif drug_info.get('generic_name'):
+                generic_name = drug_info['generic_name'].lower()
+                print(f"[DEBUG] [get_medicine_usage] No detailed usage, but found generic name: {generic_name}")
+                if 'statin' in generic_name or 'vastatin' in generic_name:
+                    return f"{medicine_name.title()} is used for: {medicine_name.title()} ({drug_info['generic_name']}) is used to lower cholesterol and reduce the risk of heart disease and stroke."
+                elif 'sartan' in generic_name:
+                    return f"{medicine_name.title()} is used for: {medicine_name.title()} ({drug_info['generic_name']}) is used to treat high blood pressure and protect the kidneys in patients with diabetes."
+                elif 'pril' in generic_name:
+                    return f"{medicine_name.title()} is used for: {medicine_name.title()} ({drug_info['generic_name']}) is used to treat high blood pressure and heart failure."
+                elif 'dipine' in generic_name:
+                    return f"{medicine_name.title()} is used for: {medicine_name.title()} ({drug_info['generic_name']}) is used to treat high blood pressure and chest pain (angina)."
+                else:
+                    return f"{medicine_name.title()} is used for: {medicine_name.title()} contains {drug_info['generic_name']}. For specific usage information, please consult your doctor or pharmacist."
+    except Exception as e:
+        print(f"[DEBUG] [get_medicine_usage] RxNav API error: {e}")
+        errors.append(f"RxNav: {e}")
+    # PRIORITY 2: Try OpenFDA API
+    try:
+        print(f"[DEBUG] [get_medicine_usage] Trying openFDA for: {medicine_name}")
+        import requests
+        url = "https://api.fda.gov/drug/label.json"
+        params = {
+            'search': f'openfda.brand_name:"{medicine_name}"',
+            'limit': 1
+        }
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('results'):
+                result = data['results'][0]
+                if 'indications_and_usage' in result:
+                    usage = result['indications_and_usage'][0]
+                    print(f"[DEBUG] [get_medicine_usage] Found usage in OpenFDA: {usage}")
+                    return f"{medicine_name.title()} is used for: {usage}"
+    except Exception as e:
+        print(f"[DEBUG] [get_medicine_usage] openFDA error: {e}")
+        errors.append(f"OpenFDA: {e}")
+    # PRIORITY 3: Try DailyMed API
+    try:
+        print(f"[DEBUG] [get_medicine_usage] Trying DailyMed for: {medicine_name}")
+        import requests
+        # Step 1: Get drug names to find setid
+        url1 = f"https://dailymed.nlm.nih.gov/dailymed/services/v2/drugnames.json"
+        params1 = {'drug_name': medicine_name.lower()}
+        response1 = requests.get(url1, params=params1, timeout=10)
+        if response1.status_code == 200:
+            data1 = response1.json()
+            if data1.get('data'):
+                setid = data1['data'][0].get('setid')
+                if setid:
+                    # Step 2: Get detailed information
+                    url2 = f"https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/{setid}.json"
+                    response2 = requests.get(url2, timeout=10)
+                    if response2.status_code == 200:
+                        data2 = response2.json()
+                        if 'indications_and_usage' in data2:
+                            usage = data2['indications_and_usage']
+                            print(f"[DEBUG] [get_medicine_usage] Found usage in DailyMed: {usage}")
+                            return f"{medicine_name.title()} is used for: {usage}"
+    except Exception as e:
+        print(f"[DEBUG] [get_medicine_usage] DailyMed error: {e}")
+        errors.append(f"DailyMed: {e}")
+    # LAST RESORT: Check local database
+    print(f"[DEBUG] [get_medicine_usage] APIs failed, trying local database")
     usage = get_local_usage(medicine_name)
     if usage:
+        print(f"[DEBUG] [get_medicine_usage] Found usage in local database")
         return f"{medicine_name.title()} is used for: {usage}"
-    # Try RxNav
-    success, drug_info, error = rxnav_api.get_drug_info(medicine_name)
-    if success and drug_info.get('usage_text') and drug_info['usage_text'] != 'Usage information not available':
-        return f"{medicine_name.title()} is used for: {drug_info['usage_text']}"
+    print(f"[DEBUG] [get_medicine_usage] No usage information found anywhere. Errors: {errors}")
     return f"Sorry, I couldn't find usage information for {medicine_name.title()}."
 
 def get_medicine_price(medicine_name):
@@ -535,18 +916,6 @@ def get_medicine_price(medicine_name):
             return f"Sorry, I couldn't find the price for {name}."
     return f"Sorry, I couldn't find any information for {medicine_name.title()}."
 
-# Define LangChain tools
-usage_tool = Tool(
-    name="GetMedicineUsage",
-    func=get_medicine_usage,
-    description="Get the usage/indications for a medicine. Input should be the medicine name."
-)
-price_tool = Tool(
-    name="GetMedicinePrice",
-    func=get_medicine_price,
-    description="Get the price for a medicine. Input should be the medicine name."
-)
-
 def answer_medicine_question(question: str, user_id: str = 'default') -> str:
     """Intelligent medicine Q&A system that can handle various types of questions."""
     global conversation_context
@@ -557,11 +926,114 @@ def answer_medicine_question(question: str, user_id: str = 'default') -> str:
     question_lower = question.lower().strip()
     print(f"[DEBUG] Normalized question: '{question_lower}'")
     
+    # Handle common greetings and non-medical queries FIRST
+    greetings = ['hi', 'hello', 'hey', 'good morning', 'good evening', 'good afternoon']
+    arabic_greetings = ['مرحبا', 'أهلا', 'اهلا', 'السلام عليكم', 'صباح الخير', 'مساء الخير']
+    farewells = ['bye', 'goodbye', 'see you', 'thanks', 'thank you', 'شكرا', 'وداعا']
+    
+    # Check if the question is just a greeting
+    if (question_lower in greetings or 
+        any(greeting in question_lower for greeting in greetings + arabic_greetings) or
+        question_lower in farewells or
+        any(farewell in question_lower for farewell in farewells)):
+        return "Hello! I'm here to help you with medicine information. You can ask me about:\n• Medicine prices: 'What is the price of Panadol?'\n• Medicine usage: 'What is Lipitor used for?'\n• Active ingredients: 'What are the ingredients in Claritine?'\n• Medicine comparisons: 'What is the difference between Panadol and Brufen?'\n\nHow can I help you today?"
+    
+    # Ensure user context exists first
+    if user_id not in conversation_context:
+        conversation_context[user_id] = {'last_medicine': None, 'variants': []}
+        print(f"[DEBUG] Initialized conversation context for user: {user_id}")
+    
     # Get user's conversation context
     user_context = conversation_context.get(user_id, {})
     last_medicine = user_context.get('last_medicine', None)
     variants = user_context.get('variants', [])
     print(f"[DEBUG] User context: last_medicine={last_medicine}, variants_count={len(variants)}")
+    
+    # --- NEW: Handle pending medicine confirmation ---
+    if user_context.get('pending_medicine_confirmation'):
+        if question_lower in ['yes', 'y', 'ايوه', 'نعم']:
+            medicine_name = user_context['pending_medicine_confirmation']
+            print(f"[DEBUG] User confirmed medicine: {medicine_name}")
+            conversation_context[user_id]['last_medicine'] = medicine_name
+            original_question_text = user_context.get('pending_question', '')
+            conversation_context[user_id]['pending_medicine_confirmation'] = None
+            conversation_context[user_id]['pending_question'] = None
+            
+            # Determine what type of question was asked and respond appropriately
+            original_lower = original_question_text.lower()
+            print(f"[DEBUG] Processing confirmed medicine '{medicine_name}' for original question: '{original_question_text}'")
+            
+            # Check what type of question was originally asked
+            if any(keyword in original_lower for keyword in ['price', 'cost', 'how much', 'costs']):
+                print(f"[DEBUG] Original was price question, getting price for {medicine_name}")
+                return get_medicine_price(medicine_name)
+            elif any(keyword in original_lower for keyword in ['usage', 'used for', 'indications', 'what is', 'what does', 'purpose', 'treat', 'treats']):
+                print(f"[DEBUG] Original was usage question, getting usage for {medicine_name}")
+                return get_medicine_usage(medicine_name)
+            elif any(keyword in original_lower for keyword in ['active ingredient', 'ingredients', 'contains', 'what is in']):
+                print(f"[DEBUG] Original was ingredient question, getting ingredients for {medicine_name}")
+                ingredients = get_active_ingredients(medicine_name)
+                if ingredients:
+                    return f"The active ingredient(s) in {medicine_name.title()} is/are: {', '.join(ingredients)}"
+                else:
+                    return f"I couldn't find the active ingredients for {medicine_name.title()}."
+            else:
+                # For other questions, provide general info
+                print(f"[DEBUG] Original was general question, getting general info for {medicine_name}")
+                return get_medicine_usage(medicine_name)
+                
+        elif question_lower in ['no', 'n', 'لا', 'لأ', 'nope']:
+            # Try next best match or ask for clarification
+            prev_match = user_context['pending_medicine_confirmation']
+            # Remove previous best match and try again
+            # Get the medicine_names list from extract_medicine_name_from_question
+            medicine_names = [
+                'panadol', 'بانادول', 'البانادول', 'lipitor', 'ليبيتور', 'الليبيتور', 
+                'claritine', 'claritin', 'claratyne', 'prozac', 'zoloft', 'augmentin', 'أوجمنتين', 'الأوجمنتين',
+                'voltaren', 'فولتارين', 'الفولتارين', 'concor', 'كونكور', 'الكونكور', 
+                'norvasc', 'zocor', 'crestor', 'plavix', 'zyprexa', 'abilify', 'risperdal', 'seroquel',
+                'allegra', 'أليجرا', 'الأليجرا', 'zyrtec', 'زيرتيك', 'الزيرتيك', 
+                'benadryl', 'بينادريل', 'البينادريل', 'tylenol', 'advil', 'motrin', 'aspirin', 'أسبيرين', 'الأسبيرين',
+                'ozempic', 'lantus', 'humalog', 'glucophage', 'metformin', 'ميتفورمين', 'الميتفورمين',
+                'rivo', 'ريفو', 'الريفو', 'xarelto', 'cetirizine', 'سيتريزين', 'السيتريزين',
+                # Additional medicines - FIXED: Added missing medicines
+                'aleve', 'naproxen', 'cozaar', 'losartan', 'nexium', 'esomeprazole', 'zantac', 'ranitidine',
+                'prilosec', 'omeprazole', 'celebrex', 'celecoxib', 'diovan', 'valsartan',
+                'protonix', 'pantoprazole', 'levothyroxine', 'synthroid', 'montelukast', 'singulair',
+                'atorvastatin', 'simvastatin', 'rosuvastatin', 'amlodipine', 'lisinopril', 'hydrochlorothiazide',
+                'warfarin', 'coumadin', 'digoxin', 'furosemide', 'lasix', 'metoprolol', 'carvedilol',
+                # Nasal sprays and allergy medications - FIXED: Added Flonase and related medicines
+                'flonase', 'nasacort', 'rhinocort', 'nasonex', 'afrin', 'sudafed', 'claritin-d', 'mucinex',
+                'fluticasone', 'triamcinolone', 'budesonide', 'mometasone', 'oxymetazoline', 'pseudoephedrine',
+                # Ibuprofen and common misspellings/brands
+                'ibuprofen', 'أيبوبروفين', 'الأيبوبروفين', 'brufen', 'ibubrufen', 'ibuprufen', 'ibuprophen', 'ibuprofene', 'ibufren',
+                # NEWLY ADDED: Missing medicines that users are asking about
+                'proair hfa', 'proair', 'ventolin hfa', 'zithromax', 'azithromycin', 'neurontin', 'gabapentin',
+                'amoxil', 'amoxicillin', 'keflex', 'cephalexin',
+                'epipen', 'toprol xl', 'toprol',
+            ]
+            if prev_match in medicine_names:
+                medicine_names.remove(prev_match)
+            conversation_context[user_id]['pending_medicine_confirmation'] = None
+            # Try to extract again
+            from fuzzywuzzy import fuzz
+            best_score = 0
+            best_match = None
+            question_text = user_context['pending_question']
+            question_lower2 = question_text.lower()
+            for name in medicine_names:
+                score = fuzz.partial_ratio(name, question_lower2)
+                if score > best_score:
+                    best_score = score
+                    best_match = name
+            if best_score >= 70:
+                conversation_context[user_id]['pending_medicine_confirmation'] = best_match
+                return f"Did you mean '{best_match}'? (yes/no)"
+            else:
+                return "Sorry, I couldn't confidently identify the medicine. Please specify the medicine name more clearly."
+        else:
+            return f"Did you mean '{user_context['pending_medicine_confirmation']}'? (yes/no)"
+    # --- END NEW ---
     
     # Handle variant selection by number
     if variants and question_lower.isdigit():
@@ -605,549 +1077,953 @@ def answer_medicine_question(question: str, user_id: str = 'default') -> str:
         print("[DEBUG] Help request detected.")
         return "I'm your medicine assistant! I can help you with:\n\n• **Usage Questions**: 'What is Panadol used for?' or 'What are the indications for Augmentin?'\n• **Price Questions**: 'What's the price of Voltaren?' or 'How much does Concor cost?'\n• **Comparison Questions**: 'What's the difference between Tylenol and Advil?'\n• **Administration Questions**: 'How should I take metformin?'\n• **General Info**: 'Tell me about Lipitor' or 'What is Rivo?'\n\nJust ask me anything about medicines!"
     
-    # Classify question type and extract medicine names
-    question_info = classify_question_and_extract_medicines(original_question, question_lower, last_medicine)
+    # Handle comparison questions (check this first to avoid conflicts) (English and Arabic)
+    comparison_keywords = ['difference', 'compare', 'versus', 'vs', 'between', 'and']
+    arabic_comparison_keywords = ['الفرق', 'قارن', 'مقارنة', 'بين', 'و', 'أو']
     
-    if not question_info:
-        print(f"[DEBUG] Could not classify question or extract medicine names.")
-        return "I'm here to help with medicine questions! Please specify a medicine name.\n\n**Examples:**\n• **Usage**: 'What is Panadol used for?' or 'What are the indications for Augmentin?'\n• **Price**: 'What's the price of Voltaren?' or 'How much does Concor cost?'\n• **Comparison**: 'What's the difference between Tylenol and Advil?'\n• **Administration**: 'How should I take metformin?'\n\n**Popular medicines:** Panadol, Augmentin, Voltaren, Concor, Lipitor, Rivo"
-    
-    question_type = question_info['type']
-    medicines = question_info['medicines']
-    
-    print(f"[DEBUG] Question type: {question_type}, Medicines: {medicines}")
-    
-    # Process based on question type
-    if question_type == 'comparison':
-        return handle_comparison_question(medicines)
-    elif question_type == 'compound':
-        return handle_compound_question(medicines[0], user_id)
-    elif question_type == 'usage':
-        return handle_usage_question(medicines[0], user_id)
-    elif question_type == 'price':
-        return handle_price_question(medicines[0], user_id)
-    elif question_type == 'administration':
-        return handle_administration_question(medicines[0])
-    elif question_type == 'category':
-        return handle_category_question(medicines[0])
-    elif question_type == 'ingredients':
-        return handle_ingredients_question(medicines[0])
-    elif question_type == 'warnings':
-        return handle_warnings_question(medicines[0])
-    elif question_type == 'special_populations':
-        return handle_special_populations_question(medicines[0])
-    else:
-        return handle_general_question(medicines[0], user_id)
-
-def classify_question_and_extract_medicines(original_question: str, question_lower: str, last_medicine: str = None):
-    """Classify question type and extract medicine names."""
-    
-    # Check for comparison questions first (English and Arabic)
-    english_comparison_patterns = ['difference between', 'diiference between', 'compare', 'versus', 'vs']
-    arabic_comparison_patterns = ['الفرق بين', 'فرق بين', 'مقارنة بين', 'مقارنة']
-    
-    # Check for "between X and Y" pattern
-    has_between_and = 'between' in question_lower and ' and ' in question_lower
-    
-    is_comparison = (any(phrase in question_lower for phrase in english_comparison_patterns) or
-                    any(phrase in original_question for phrase in arabic_comparison_patterns) or
-                    has_between_and)
-    
-    if is_comparison:
-        medicines = extract_medicines_from_comparison(original_question, question_lower)
+    if (any(keyword in question_lower for keyword in comparison_keywords) or 
+        any(keyword in original_question for keyword in arabic_comparison_keywords)):
+        # Extract medicine names from question
+        medicines = extract_multiple_medicines_from_question(question_lower)
         if len(medicines) >= 2:
-            return {'type': 'comparison', 'medicines': medicines}
-    
-    # Check for administration questions
-    if any(phrase in question_lower for phrase in ['how should i take', 'how to take', 'how do i take', 'dosage', 'administration']):
-        medicine = extract_single_medicine(original_question, question_lower, last_medicine)
-        if medicine:
-            return {'type': 'administration', 'medicines': [medicine]}
-    
-    # Check for active ingredient questions
-    if any(phrase in question_lower for phrase in ['active ingredient', 'main ingredient', 'what ingredient', 'contains what']) or \
-       any(phrase in original_question for phrase in ['المادة الفعالة', 'المكونات النشطة', 'يحتوي على']):
-        medicine = extract_single_medicine(original_question, question_lower, last_medicine)
-        if medicine:
-            return {'type': 'ingredients', 'medicines': [medicine]}
-    
-    # Check for contraindication/warning questions
-    if any(phrase in question_lower for phrase in ['who should not', 'should not take', 'contraindication', 'warning', 'side effect', 'avoid']) or \
-       any(phrase in original_question for phrase in ['من لا يجب', 'لا يجب أن', 'تحذيرات', 'آثار جانبية', 'تجنب']):
-        medicine = extract_single_medicine(original_question, question_lower, last_medicine)
-        if medicine:
-            return {'type': 'warnings', 'medicines': [medicine]}
-    
-    # Check for pregnancy/pediatric questions
-    if any(phrase in question_lower for phrase in ['pregnant', 'pregnancy', 'children', 'pediatric', 'kids', 'child']) or \
-       any(phrase in original_question for phrase in ['الحمل', 'الحامل', 'الأطفال', 'للأطفال', 'طفل']):
-        medicine = extract_single_medicine(original_question, question_lower, last_medicine)
-        if medicine:
-            return {'type': 'special_populations', 'medicines': [medicine]}
-    
-    # Check for category questions
-    if any(phrase in question_lower for phrase in ['what are', 'used for']) and any(word in question_lower for word in ['antihistamines', 'antibiotics', 'painkillers', 'antidepressants']):
-        medicine = extract_single_medicine(original_question, question_lower, last_medicine)
-        if medicine:
-            return {'type': 'category', 'medicines': [medicine]}
-    
-    # Check for compound questions (usage and price) - English and Arabic
-    # Must have explicit usage AND price keywords, not just "what is"
-    has_explicit_usage_keywords = (any(word in question_lower for word in ['usage', 'used for', 'indication', 'purpose']) or
-                                  any(word in original_question for word in ['استخدام', 'استعمال', 'يستخدم']))
-    has_price_keywords = (any(word in question_lower for word in ['price', 'cost', 'how much']) or
-                         any(word in original_question for word in ['سعر', 'ثمن', 'كم سعر', 'كم ثمن']))
-    
-    if has_explicit_usage_keywords and has_price_keywords:
-        medicine = extract_single_medicine(original_question, question_lower, last_medicine)
-        if medicine:
-            return {'type': 'compound', 'medicines': [medicine]}
-    
-    # Check for price questions
-    if has_price_keywords:
-        medicine = extract_single_medicine(original_question, question_lower, last_medicine)
-        if medicine:
-            return {'type': 'price', 'medicines': [medicine]}
-    
-    # Check for usage questions
-    has_usage_keywords = (any(word in question_lower for word in ['usage', 'used for', 'indication', 'purpose', 'what is', 'what\'s']) or
-                         any(word in original_question for word in ['استخدام', 'استعمال', 'ما هو', 'يستخدم']))
-    
-    if has_usage_keywords:
-        medicine = extract_single_medicine(original_question, question_lower, last_medicine)
-        if medicine:
-            return {'type': 'usage', 'medicines': [medicine]}
-    
-    # Default: try to extract any medicine name
-    medicine = extract_single_medicine(original_question, question_lower, last_medicine)
-    if medicine:
-        return {'type': 'general', 'medicines': [medicine]}
-    
-    return None
-
-def extract_medicines_from_comparison(original_question: str, question_lower: str):
-    """Extract medicine names from comparison questions."""
-    medicines = []
-    
-    # First, check for Arabic medicine names
-    arabic_to_english = {
-        'كلاريتين': 'claritine',
-        'لوراتادين': 'loratadine',
-        'بانادول': 'panadol',
-        'ريفو': 'rivo',
-        'فولتارين': 'voltaren',
-        'كونكور': 'concor',
-        'ليبيتور': 'lipitor',
-        'أوجمنتين': 'augmentin',
-        'أموكسيسيلين': 'amoxicillin',
-        'ميتفورمين': 'metformin',
-        'أسبيرين': 'aspirin',
-        'أيبوبروفين': 'ibuprofen',
-        'باراسيتامول': 'paracetamol',
-        'أسيترامينوفين': 'acetaminophen',
-        'تايلينول': 'tylenol',
-        'أدفيل': 'advil',
-        'بروفين': 'brufen',
-        'موترين': 'motrin',
-        'زانتاك': 'zantac',
-        'رانتاج': 'rantag',
-        'رانيتين': 'ranitin',
-        'بريلوسيك': 'prilosec',
-        'لوسيك': 'losec',
-        'جلوكوفاج': 'glucophage',
-        'سيدوفاج': 'cidophage',
-        'نورفاسك': 'norvasc',
-        'أملور': 'amlor',
-        'زيرتيك': 'zyrtec',
-        'أليريد': 'alerid',
-        'كاتافلام': 'cataflam',
-        'أوزيمبك': 'ozempic',
-        'دوكسيسايكلين': 'doxycycline',
-        'أموكسيسيلين': 'amoxicillin'
-    }
-    
-    for arabic_name, english_name in arabic_to_english.items():
-        if arabic_name in original_question:
-            medicines.append(english_name)
-    
-    # Common English medicine names to look for
-    common_medicines = [
-        'tylenol', 'advil', 'panadol', 'aspirin', 'ibuprofen', 'acetaminophen',
-        'paracetamol', 'voltaren', 'diclofenac', 'lipitor', 'atorvastatin',
-        'concor', 'bisoprolol', 'augmentin', 'amoxicillin', 'claritine', 'claritin',
-        'loratadine', 'metformin', 'prozac', 'fluoxetine', 'zoloft', 'sertraline',
-        'brufen', 'motrin', 'zantac', 'rantag', 'ranitin', 'prilosec', 'losec',
-        'glucophage', 'cidophage', 'norvasc', 'amlor', 'zyrtec', 'alerid', 'rivo', 'cataflam',
-        'doxycycline', 'azithromycin', 'ciprofloxacin'
-    ]
-    
-    # Look for medicines in the question
-    for medicine in common_medicines:
-        if medicine in question_lower:
-            medicines.append(medicine)
-    
-    # Remove duplicates and return
-    return list(set(medicines))
-
-def extract_single_medicine(original_question: str, question_lower: str, last_medicine: str = None):
-    """Extract a single medicine name from the question."""
-    
-    # First, check for Arabic medicine names
-    arabic_to_english = {
-        'كلاريتين': 'claritine',
-        'لوراتادين': 'loratadine',
-        'بانادول': 'panadol',
-        'ريفو': 'rivo',
-        'فولتارين': 'voltaren',
-        'كونكور': 'concor',
-        'ليبيتور': 'lipitor',
-        'أوجمنتين': 'augmentin',
-        'أموكسيسيلين': 'amoxicillin',
-        'ميتفورمين': 'metformin',
-        'أسبيرين': 'aspirin',
-        'أيبوبروفين': 'ibuprofen',
-        'باراسيتامول': 'paracetamol',
-        'أسيترامينوفين': 'acetaminophen',
-        'تايلينول': 'tylenol',
-        'أدفيل': 'advil',
-        'بروفين': 'brufen',
-        'موترين': 'motrin',
-        'زانتاك': 'zantac',
-        'رانتاج': 'rantag',
-        'رانيتين': 'ranitin',
-        'بريلوسيك': 'prilosec',
-        'لوسيك': 'losec',
-        'جلوكوفاج': 'glucophage',
-        'سيدوفاج': 'cidophage',
-        'نورفاسك': 'norvasc',
-        'أملور': 'amlor',
-        'زيرتيك': 'zyrtec',
-        'أليريد': 'alerid',
-        'كاتافلام': 'cataflam',
-        'أوزيمبك': 'ozempic',
-        'دوكسيسايكلين': 'doxycycline',
-        'أموكسيسيلين': 'amoxicillin'
-    }
-    
-    for arabic_name, english_name in arabic_to_english.items():
-        if arabic_name in original_question:
-            print(f"[DEBUG] Found Arabic medicine: '{arabic_name}' -> '{english_name}'")
-            return english_name
-    
-    # Look for common medicine names in the current question FIRST
-    common_medicines = [
-        'tylenol', 'advil', 'panadol', 'aspirin', 'ibuprofen', 'acetaminophen',
-        'paracetamol', 'voltaren', 'diclofenac', 'lipitor', 'atorvastatin',
-        'concor', 'bisoprolol', 'augmentin', 'amoxicillin', 'claritine', 'claritin',
-        'loratadine', 'metformin', 'prozac', 'fluoxetine', 'zoloft', 'sertraline',
-        'ozempic', 'semaglutide', 'humalog', 'lantus', 'zoloft', 'xarelto',
-        'brufen', 'motrin', 'zantac', 'rantag', 'ranitin', 'prilosec', 'losec',
-        'glucophage', 'cidophage', 'norvasc', 'amlor', 'zyrtec', 'alerid', 'rivo', 'cataflam',
-        'doxycycline', 'azithromycin', 'ciprofloxacin'
-    ]
-    
-    for medicine in common_medicines:
-        if medicine in question_lower:
-            print(f"[DEBUG] Found medicine in question: '{medicine}'")
-            return medicine
-    
-    # Try to extract from words in the question - only exact matches
-    words = question_lower.split()
-    for word in words:
-        # Clean the word
-        clean_word = re.sub(r'[?.,!]', '', word.lower())
-        if len(clean_word) >= 3:
-            # Check if it's a known medicine - only exact matches, not partial
-            from src.services.local_usage_db import get_local_usage_exact
-            usage = get_local_usage_exact(clean_word)
-            if usage:
-                print(f"[DEBUG] Found medicine by exact local usage: '{clean_word}'")
-                return clean_word
-    
-    # ONLY use context if no medicine found in current question AND it's a generic question
-    if last_medicine and is_generic_question(question_lower):
-        print(f"[DEBUG] Using last_medicine from context: '{last_medicine}'")
-        return last_medicine
-    
-    return None
-
-def is_generic_question(question_lower: str):
-    """Check if this is a generic question that should use context."""
-    # Simple patterns for generic questions
-    generic_patterns = [
-        'what is the usage',
-        'what is the price', 
-        'what is usage',
-        'what is price',
-        'the usage',
-        'the price',
-        'usage',
-        'price'
-    ]
-    
-    # Check if the question matches any generic pattern
-    for pattern in generic_patterns:
-        if pattern in question_lower:
-            return True
-    
-    return False
-
-def handle_comparison_question(medicines):
-    """Handle comparison questions between medicines."""
-    if len(medicines) < 2:
-        return "I need at least two medicines to compare. Please specify which medicines you'd like to compare."
-    
-    responses = []
-    for medicine in medicines[:2]:  # Limit to 2 medicines for comparison
-        usage = get_usage_for_medicine(medicine)
-        if usage:
-            responses.append(f"**{medicine.title()}**: {usage}")
+            print(f"[DEBUG] Comparison question detected for medicines: {medicines}")
+            comparison_info = compare_medicines(medicines[0], medicines[1])
+            return comparison_info
         else:
-            responses.append(f"**{medicine.title()}**: Usage information not available")
+            return "Please specify which two medicines you'd like to compare. For example:\n• 'What is the difference between Panadol and Rivo?'\n• 'Compare Lipitor and Crestor'\n• 'Panadol versus Tylenol'"
     
-    if len(responses) == 2:
-        return f"Here's a comparison between **{medicines[0].title()}** and **{medicines[1].title()}**:\n\n{responses[0]}\n\n{responses[1]}"
-    else:
-        return "\n\n".join(responses)
-
-def handle_usage_question(medicine, user_id):
-    """Handle usage questions for a single medicine."""
-    usage = get_usage_for_medicine(medicine)
+    # Handle active ingredient questions (English and Arabic)
+    ingredient_keywords = ['active ingredient', 'active ingredint', 'ingredients', 'ingredint', 'contains', 'what is in', 'what\'s in', 'ingerin', 'ingreint', 'ingrediant', 'ingrediants', 'ingrient', 'ingrients', 'ingridient', 'ingridients']
+    arabic_ingredient_keywords = ['المادة الفعالة', 'المواد الفعالة', 'المكونات', 'يحتوي', 'ما في', 'ماذا في']
     
-    # Update context
-    conversation_context[user_id] = {
-        'last_medicine': medicine,
-        'last_question_type': 'usage'
-    }
-    
-    if usage:
-        return f"**{medicine.title()}** is used for: {usage}"
-    else:
-        return f"Sorry, I couldn't find usage information for **{medicine.title()}**. You can try:\n• Asking about its price: 'What's the price of {medicine.title()}?'\n• Asking about a different medicine"
-
-def handle_price_question(medicine, user_id):
-    """Handle price questions for a single medicine."""
-    print(f"[DEBUG] Querying external API for price of '{medicine}'")
-    success, products, error = medicine_api.search_and_get_details(medicine)
-    print(f"[DEBUG] External API result: success={success}, products_count={len(products) if products else 0}, error={error}")
-    
-    # Update context
-    conversation_context[user_id] = {
-        'last_medicine': medicine,
-        'last_question_type': 'price'
-    }
-    
-    if success and products:
-        if len(products) > 1:
-            variants_text = "\n".join([f"• **{i+1}.** {product.get('name', 'Unknown')} - {product.get('price', 'N/A')} EGP" for i, product in enumerate(products[:5])])
-            conversation_context[user_id]['variants'] = products
-            conversation_context[user_id]['medicine_name'] = medicine
-            print(f"[DEBUG] Multiple variants found for '{medicine}': {len(products)} variants")
-            return f"I found **{len(products)} variants** of **{medicine.title()}**:\n\n{variants_text}\n\n**Please specify which one you want:**\n• Say the number (1, 2, 3...)\n• Or ask about a specific variant by name"
-        else:
-            product = products[0]
-            name = product.get('name', medicine.title())
-            price = product.get('price', None)
-            currency = 'EGP'
-            print(f"[DEBUG] Single product found: {product}")
-            if price:
-                return f"The price of **{name}** is **{price} {currency}**."
+    if (any(keyword in question_lower for keyword in ingredient_keywords) or 
+        any(keyword in original_question for keyword in arabic_ingredient_keywords)):
+        try:
+            print(f"[DEBUG] Active ingredient question detected with keywords: {[k for k in ingredient_keywords if k in question_lower]}")
+            # Extract medicine name from question text directly (API-first approach - don't check local DB first)
+            potential_medicine = extract_medicine_name_from_question(question_lower, user_id)
+            # If not found in local list, use the last significant word(s) as fallback
+            if not potential_medicine:
+                cleaned_question = question_lower
+                ingredient_words = ['active', 'ingredient', 'ingredint', 'ingreint', 'ingrediant', 'ingrediants', 'ingrient', 'ingrients', 'ingridient', 'ingridients', 'ingerin', 'ingredients', 'contains', 'what', 'is', 'the', 'in', 'of', 'are']
+                for word in ingredient_words:
+                    cleaned_question = cleaned_question.replace(word, ' ')
+                cleaned_question = re.sub(r'\s+', ' ', cleaned_question).strip()
+                words = [w for w in cleaned_question.split() if len(w) > 2]
+                if words:
+                    # Use the last 2 words as a fallback medicine name (to handle things like 'Toprol XL')
+                    fallback_medicine = ' '.join(words[-2:]) if len(words) >= 2 else words[-1]
+                    print(f"[DEBUG] Fallback medicine name from question: '{fallback_medicine}'")
+                    potential_medicine = fallback_medicine
+            if not potential_medicine and last_medicine:
+                print(f"[DEBUG] No medicine name found in question, using context: {last_medicine}")
+                potential_medicine = last_medicine
+            if potential_medicine:
+                print(f"[DEBUG] Active ingredient question detected for medicine: {potential_medicine}")
+                current_medicine = potential_medicine
+                print(f"[DEBUG] Using API-first approach for: {current_medicine}")
+                ingredients = get_active_ingredients_api_first(current_medicine)
+                if ingredients:
+                    conversation_context[user_id]['last_medicine'] = current_medicine
+                    return f"The active ingredient(s) in {current_medicine.title()} is/are: {', '.join(ingredients)}"
+                else:
+                    return f"I couldn't find the active ingredients for {current_medicine.title()}. Please try searching for it in the search bar above."
             else:
-                print(f"[DEBUG] No price found for '{name}' in product data.")
-                return f"Sorry, I couldn't find the price for **{name}**. You can try:\n• Asking about its usage: 'What is {name} used for?'\n• Asking about a different medicine"
-    
-    print(f"[DEBUG] No products found for '{medicine}' in external API.")
-    return f"Sorry, I couldn't find any information for **{medicine.title()}**. You can try:\n• Asking about its usage: 'What is {medicine.title()} used for?'\n• Asking about a different medicine\n\n**Popular medicines:** Panadol, Augmentin, Voltaren, Concor, Lipitor, Rivo"
+                return "Please specify which medicine you'd like to know the active ingredients of. For example:\n• 'What is the active ingredient of Lipitor?'\n• 'What are the ingredients in Panadol?'"
+        except Exception as e:
+            print(f"[DEBUG] [answer_medicine_question] Exception in active ingredient logic: {e}")
+            med_name = potential_medicine if 'potential_medicine' in locals() and potential_medicine else 'this medicine'
+            return f"I couldn't find the active ingredients for {med_name.title()}. Please try searching for it in the search bar above."
 
-def handle_compound_question(medicine, user_id):
-    """Handle compound questions (usage and price)."""
-    # Get usage information
-    usage = get_usage_for_medicine(medicine)
+    # Handle price questions (English and Arabic) - CHECK FIRST to avoid conflicts
+    price_keywords = ['price', 'cost', 'how much', 'costs', 'prices', 'proices']
+    arabic_price_keywords = ['سعر', 'تكلفة', 'كم', 'بكام', 'التكلفة', 'أسعار']
+    all_prices_keywords = ['all prices', 'all proices', 'جميع الأسعار', 'كل الأسعار']
     
-    # Get price information
-    print(f"[DEBUG] Querying external API for price of '{medicine}'")
-    success, products, error = medicine_api.search_and_get_details(medicine)
-    print(f"[DEBUG] External API result: success={success}, products_count={len(products) if products else 0}, error={error}")
-    
-    # Update context
-    conversation_context[user_id] = {
-        'last_medicine': medicine,
-        'last_question_type': 'compound'
-    }
-    
-    response = f"**{medicine.title()}** information:\n\n"
-    
-    # Add usage information
-    if usage:
-        response += f"**Usage**: {usage}\n\n"
-    else:
-        response += f"**Usage**: Usage information not available\n\n"
-    
-    # Add price information
-    if success and products:
-        if len(products) == 1:
-            product = products[0]
-            name = product.get('name', 'Unknown')
-            price = product.get('price', 'N/A')
-            currency = 'EGP'
-            response += f"**Price**: {name} costs {price} {currency}"
+    # Check for "all prices" requests first
+    if any(keyword in question_lower for keyword in all_prices_keywords):
+        # Extract medicine name from question
+        medicine_name = extract_medicine_name_from_question(question_lower, user_id)
+        
+        # If no medicine name found, try to use context from previous conversation
+        if not medicine_name and last_medicine:
+            print(f"[DEBUG] No medicine name found in all prices question, using context: {last_medicine}")
+            medicine_name = last_medicine
+        
+        if medicine_name:
+            print(f"[DEBUG] All prices question detected for medicine: {medicine_name}")
+            # Update conversation context
+            conversation_context[user_id]['last_medicine'] = medicine_name
+            print(f"[DEBUG] Updated context with last_medicine: {medicine_name}")
+            
+            # Get all available products and their prices
+            success, products, error = medicine_api.search_and_get_details(medicine_name)
+            if success and products:
+                price_list = f"**All available {medicine_name.title()} products and prices:**\n\n"
+                for i, product in enumerate(products, 1):
+                    name = product.get('name', 'Unknown')
+                    price = product.get('price', 'N/A')
+                    price_list += f"{i}. **{name}** - {price} EGP\n"
+                
+                # Store variants for potential selection
+                conversation_context[user_id]['variants'] = products
+                price_list += f"\n💡 You can type a number (1-{len(products)}) to select a specific product for more details."
+                return price_list
+            else:
+                return f"Sorry, I couldn't find price information for {medicine_name.title()}."
         else:
-            # Multiple variants found
-            conversation_context[user_id]['variants'] = products
-            response += f"**Price**: I found {len(products)} variants:\n"
-            for i, product in enumerate(products[:3], 1):  # Show first 3 variants
-                name = product.get('name', 'Unknown')
-                price = product.get('price', 'N/A')
-                currency = 'EGP'
-                response += f"• **{i}.** {name} - {price} {currency}\n"
+            return "Please specify which medicine you'd like to see all prices for. For example:\n• 'Show me all prices of Panadol'\n• 'Give me all Augmentin prices'"
+    
+    elif (any(keyword in question_lower for keyword in price_keywords) or 
+        any(keyword in original_question for keyword in arabic_price_keywords)):
+        # For very short questions (like just "price"), prioritize context over fuzzy matching
+        if len(question_lower.strip()) <= 10 and last_medicine:
+            print(f"[DEBUG] Very short price question, using context: {last_medicine}")
+            medicine_name = last_medicine
+        else:
+            # Extract medicine name from question
+            medicine_name = extract_medicine_name_from_question(question_lower, user_id)
             
-            if len(products) > 3:
-                response += f"• ... and {len(products) - 3} more variants\n"
+            # If no medicine name found, try to use context from previous conversation
+            if not medicine_name and last_medicine:
+                print(f"[DEBUG] No medicine name found in price question, using context: {last_medicine}")
+                medicine_name = last_medicine
+        
+        if medicine_name:
+            print(f"[DEBUG] Price question detected for medicine: {medicine_name}")
+            # Update conversation context
+            conversation_context[user_id]['last_medicine'] = medicine_name
+            print(f"[DEBUG] Updated context with last_medicine: {medicine_name}")
             
-            response += f"\n**Please specify which variant you want for more details**"
-    else:
-        response += f"**Price**: Price information not available"
+            price_info = get_medicine_price(medicine_name)
+            return price_info
+        else:
+            return "Please specify which medicine you'd like to know the price of. For example:\n• 'What is the price of Panadol?'\n• 'How much does Lipitor cost?'"
+
+    # Handle usage questions (English and Arabic) - MORE SPECIFIC KEYWORDS
+    usage_keywords = ['usage', 'used for', 'indications', 'purpose', 'treat', 'treats']
+    # More specific usage patterns to avoid conflicts
+    usage_patterns = ['what is.*used for', 'what does.*treat', 'what.*treats', 'indications for', 'purpose of']
+    arabic_usage_keywords = ['استخدام', 'يستخدم', 'مؤشرات', 'الغرض', 'يعالج', 'علاج']
     
-    return response
-
-def handle_administration_question(medicine):
-    """Handle administration questions."""
-    usage = get_usage_for_medicine(medicine)
-    if usage:
-        return f"**{medicine.title()}** is used for: {usage}\n\n**Administration**: Please consult your healthcare provider for specific dosage instructions, as they depend on your condition and medical history."
+    # Check specific usage patterns first
+    is_usage_question = False
+    if any(keyword in question_lower for keyword in usage_keywords):
+        is_usage_question = True
+    elif any(keyword in original_question for keyword in arabic_usage_keywords):
+        is_usage_question = True
     else:
-        return f"Sorry, I couldn't find information for **{medicine.title()}**. Please consult your healthcare provider for administration instructions."
-
-def handle_category_question(medicine):
-    """Handle category questions."""
-    usage = get_usage_for_medicine(medicine)
-    if usage:
-        return f"**{medicine.title()}** is used for: {usage}"
-    else:
-        return f"Sorry, I couldn't find information for **{medicine.title()}**."
-
-def handle_general_question(medicine, user_id):
-    """Handle general questions about a medicine."""
-    usage = get_usage_for_medicine(medicine)
+        # Check usage patterns with regex
+        for pattern in usage_patterns:
+            if re.search(pattern, question_lower):
+                is_usage_question = True
+                break
     
-    # Update context
-    conversation_context[user_id] = {
-        'last_medicine': medicine,
-        'last_question_type': 'general'
+    if is_usage_question:
+        # Extract medicine name from question
+        medicine_name = extract_medicine_name_from_question(question_lower, user_id)
+        
+        # If no medicine name found in local DB, try to extract from question text directly
+        if not medicine_name:
+            # Try to extract potential medicine name from question words
+            potential_medicine = None
+            question_words = question_lower.replace('usage', '').replace('used', '').replace('for', '').replace('what', '').replace('is', '').replace('the', '').replace('of', '').replace('does', '').replace('treat', '').replace('treats', '').strip()
+            # Remove common words and get the remaining word as potential medicine name
+            words = [w for w in question_words.split() if len(w) > 2 and w not in ['what', 'is', 'the', 'of', 'are', 'usage', 'used', 'for', 'does', 'treat', 'treats', 'purpose']]
+            if words:
+                potential_medicine = words[-1]  # Take the last meaningful word
+                print(f"[DEBUG] Potential medicine name extracted from usage question: '{potential_medicine}'")
+                
+                # Try to get info from APIs for this unknown medicine
+                if potential_medicine:
+                    print(f"[DEBUG] Trying APIs for unknown medicine: '{potential_medicine}'")
+                    try:
+                        success, drug_info, error = rxnav_api.get_drug_info(potential_medicine)
+                        if success and drug_info:
+                            print(f"[DEBUG] Found '{potential_medicine}' in RxNav API")
+                            medicine_name = potential_medicine
+                            # Update conversation context
+                            conversation_context[user_id]['last_medicine'] = medicine_name
+                            
+                            # Return the usage information from the API
+                            if 'usage_text' in drug_info and drug_info['usage_text']:
+                                return f"{medicine_name.title()} is used for: {drug_info['usage_text']}"
+                    except Exception as e:
+                        print(f"[DEBUG] RxNav API error for {potential_medicine}: {e}")
+        
+        # If still no medicine name found, try to use context from previous conversation
+        if not medicine_name and last_medicine:
+            print(f"[DEBUG] No medicine name found in usage question, using context: {last_medicine}")
+            medicine_name = last_medicine
+        
+        if medicine_name:
+            print(f"[DEBUG] Usage question detected for medicine: {medicine_name}")
+            # Update conversation context
+            conversation_context[user_id]['last_medicine'] = medicine_name
+            print(f"[DEBUG] Updated context with last_medicine: {medicine_name}")
+            
+            usage_info = get_medicine_usage(medicine_name)
+            return usage_info
+        else:
+            return "Please specify which medicine you'd like to know about. For example:\n• 'What is Panadol used for?'\n• 'What are the indications for Lipitor?'\n• 'What does Claritine treat?'"
+    
+    # Handle contraindication questions (English and Arabic)
+    contraindication_keywords = ['contraindication', 'contraindications', 'side effect', 'side effects', 'warnings', 'precautions']
+    arabic_contraindication_keywords = ['موانع الاستعمال', 'الآثار الجانبية', 'تحذيرات', 'احتياطات']
+    
+    if (any(keyword in question_lower for keyword in contraindication_keywords) or 
+        any(keyword in original_question for keyword in arabic_contraindication_keywords)):
+        # Extract medicine name from question
+        medicine_name = extract_medicine_name_from_question(question_lower, user_id)
+        
+        # If no medicine name found, try to use context from previous conversation
+        if not medicine_name and last_medicine:
+            print(f"[DEBUG] No medicine name found in contraindication question, using context: {last_medicine}")
+            medicine_name = last_medicine
+        
+        if medicine_name:
+            print(f"[DEBUG] Contraindication question detected for medicine: {medicine_name}")
+            # Update conversation context
+            conversation_context[user_id]['last_medicine'] = medicine_name
+            print(f"[DEBUG] Updated context with last_medicine: {medicine_name}")
+            
+            # For now, provide general guidance since we don't have detailed contraindication data
+            return f"I don't have detailed contraindication information for {medicine_name.title()} in my database. For safety information, side effects, and contraindications, please:\n• Consult your doctor or pharmacist\n• Read the medicine package insert\n• Check with a healthcare professional\n\nNever stop or start medications without medical supervision."
+        else:
+            return "Please specify which medicine you'd like to know the contraindications for. For example:\n• 'What are the contraindications of Panadol?'\n• 'Side effects of Lipitor'"
+
+    # For now, return a simple response for other questions
+    return "I understand you're asking about medicines. Please be more specific about what you'd like to know. For example:\n• 'What is the price of Lipitor?' or 'ما هو سعر الليبيتور؟'\n• 'What is Panadol used for?' or 'ما هو استخدام البانادول؟'\n• 'What is the difference between Panadol and Rivo?' or 'ما هو الفرق بين البانادول والريفو؟'"
+
+def extract_medicine_name_from_question(question: str, user_id: str = None) -> str:
+    """Extract medicine name from a question, using fuzzy matching if needed. If fuzzy match, ask for confirmation."""
+    # Common medicine names to look for (English and Arabic) - including common misspellings
+    medicine_names = [
+        'panadol', 'بانادول', 'البانادول', 'lipitor', 'ليبيتور', 'الليبيتور', 
+        'claritine', 'claritin', 'claratyne', 'prozac', 'zoloft', 'augmentin', 'أوجمنتين', 'الأوجمنتين',
+        'voltaren', 'فولتارين', 'الفولتارين', 'concor', 'كونكور', 'الكونكور', 
+        'norvasc', 'zocor', 'crestor', 'plavix', 'zyprexa', 'abilify', 'risperdal', 'seroquel',
+        'allegra', 'أليجرا', 'الأليجرا', 'zyrtec', 'زيرتيك', 'الزيرتيك', 
+        'benadryl', 'بينادريل', 'البينادريل', 'tylenol', 'advil', 'motrin', 'aspirin', 'أسبيرين', 'الأسبيرين',
+        'ozempic', 'lantus', 'humalog', 'glucophage', 'metformin', 'ميتفورمين', 'الميتفورمين',
+        'rivo', 'ريفو', 'الريفو', 'xarelto', 'cetirizine', 'سيتريزين', 'السيتريزين',
+        # Additional medicines - FIXED: Added missing medicines
+        'aleve', 'naproxen', 'cozaar', 'losartan', 'nexium', 'esomeprazole', 'zantac', 'ranitidine',
+        'prilosec', 'omeprazole', 'celebrex', 'celecoxib', 'diovan', 'valsartan',
+        'protonix', 'pantoprazole', 'levothyroxine', 'synthroid', 'montelukast', 'singulair',
+        'atorvastatin', 'simvastatin', 'rosuvastatin', 'amlodipine', 'lisinopril', 'hydrochlorothiazide',
+        'warfarin', 'coumadin', 'digoxin', 'furosemide', 'lasix', 'metoprolol', 'carvedilol',
+        # Nasal sprays and allergy medications - FIXED: Added Flonase and related medicines
+        'flonase', 'nasacort', 'rhinocort', 'nasonex', 'afrin', 'sudafed', 'claritin-d', 'mucinex',
+        'fluticasone', 'triamcinolone', 'budesonide', 'mometasone', 'oxymetazoline', 'pseudoephedrine',
+        # Ibuprofen and common misspellings/brands
+        'ibuprofen', 'أيبوبروفين', 'الأيبوبروفين', 'brufen', 'ibubrufen', 'ibuprufen', 'ibuprophen', 'ibuprofene', 'ibufren',
+        # NEWLY ADDED: Missing medicines that users are asking about
+        'proair hfa', 'proair', 'ventolin hfa', 'zithromax', 'azithromycin', 'neurontin', 'gabapentin',
+        'amoxil', 'amoxicillin', 'keflex', 'cephalexin',
+        'epipen', 'toprol xl', 'toprol',
+    ]
+    
+    question_lower = question.lower()
+    
+    # Handle common misspellings first
+    misspelling_mapping = {
+        'zertic': 'zyrtec',
+        'pndol': 'panadol',
+        'augmantin': 'augmentin',
+        'liptior': 'lipitor',
+        'liptor': 'lipitor',
+        'lipitur': 'lipitor',
+        'claritine': 'claritin',
+        'proices': 'prices',
+        # Ibuprofen misspellings/brands
+        'ibubrufen': 'ibuprofen',
+        'ibuprufen': 'ibuprofen',
+        'ibuprophen': 'ibuprofen',
+        'ibuprofene': 'ibuprofen',
+        'ibufren': 'ibuprofen',
+        'brufen': 'ibuprofen',
+        # FIXED: Add the misspelling for plavix
+        'palvix': 'plavix',
     }
     
-    if usage:
-        return f"**{medicine.title()}** is used for: {usage}"
-    else:
-        return f"Sorry, I couldn't find information for **{medicine.title()}**. You can try:\n• Asking about its price: 'What's the price of {medicine.title()}?'\n• Asking about a different medicine"
-
-def get_usage_for_medicine(medicine):
-    """Get usage information for a medicine using the fallback chain."""
-    # Try local database first (fastest)
-    usage = get_local_usage(medicine)
-    print(f"[DEBUG] Local usage lookup for '{medicine}': '{usage[:100] if usage else 'None'}...'")
+    # Check for misspellings first
+    for misspelling, correct in misspelling_mapping.items():
+        if misspelling in question_lower:
+            print(f"[DEBUG] [extract_medicine_name_from_question] Found misspelling '{misspelling}' -> '{correct}'")
+            return correct
     
-    if not usage:
-        # Use the new fallback chain
-        generic_name = extract_generic_name_from_trade_name(medicine)
-        usage = get_usage_generic(medicine, generic_name)
-        print(f"[DEBUG] Fallback usage lookup for '{medicine}': '{usage[:100] if usage else 'None'}...'")
+    # Check for exact matches first
+    for name in medicine_names:
+        if name in question_lower:
+            return name
     
-    return usage
+    # Add filtering to prevent fuzzy matching on common greetings and non-medical terms
+    common_greetings = ['hi', 'hello', 'hey', 'good', 'morning', 'evening', 'afternoon', 'thanks', 'thank', 'bye', 'goodbye', 'yes', 'no', 'ok', 'okay']
+    arabic_greetings = ['مرحبا', 'السلام', 'صباح', 'مساء', 'شكرا', 'وداعا', 'نعم', 'لا', 'أهلا', 'اهلا']
+    all_greetings = common_greetings + arabic_greetings
+    
+    # Skip fuzzy matching if the question is likely a greeting or very short non-medical term
+    question_words = question_lower.split()
+    if len(question_words) <= 2 and any(word in all_greetings for word in question_words):
+        print(f"[DEBUG] [extract_medicine_name_from_question] Skipping fuzzy matching for greeting: '{question_lower}'")
+        return ''
+    
+    # Skip fuzzy matching for very short words (less than 4 characters) unless they're known medicines
+    if len(question_lower.strip()) < 4:
+        print(f"[DEBUG] [extract_medicine_name_from_question] Skipping fuzzy matching for very short text: '{question_lower}'")
+        return ''
+    
+    # Fuzzy matching (ask for confirmation if not exact) - FIXED: Improved threshold and logic
+    from fuzzywuzzy import fuzz
+    best_score = 0
+    best_match = None
+    for name in medicine_names:
+        # Use both partial_ratio and ratio for better matching
+        partial_score = fuzz.partial_ratio(name, question_lower)
+        ratio_score = fuzz.ratio(name, question_lower)
+        # Take the higher of the two scores
+        score = max(partial_score, ratio_score)
+        
+        if score > best_score:
+            best_score = score
+            best_match = name
+    
+    print(f"[DEBUG] [extract_medicine_name_from_question] Best fuzzy match: '{best_match}' with score {best_score}")
+    
+    # If a good fuzzy match is found but not perfect, ask for confirmation
+    # FIXED: Raised threshold to 75 to reduce false positives
+    if best_score >= 75 and best_score < 100 and user_id is not None:
+        # Store the suggestion in user context
+        if user_id not in conversation_context:
+            conversation_context[user_id] = {}
+        conversation_context[user_id]['pending_medicine_confirmation'] = best_match
+        conversation_context[user_id]['pending_question'] = question
+        return None  # Indicate that confirmation is needed
+    elif best_score == 100:
+        return best_match
+    
+    print(f"[DEBUG] [extract_medicine_name_from_question] No good match found for: '{question_lower}'")
+    return ''
 
-def handle_ingredients_question(medicine):
-    """Handle active ingredient questions."""
-    # Basic ingredient information for common medicines
-    ingredients = {
-        'tylenol': 'Acetaminophen (500mg)',
-        'advil': 'Ibuprofen (200mg)',
-        'panadol': 'Paracetamol (500mg)',
-        'aspirin': 'Acetylsalicylic acid (325mg)',
-        'brufen': 'Ibuprofen (400mg)',
-        'motrin': 'Ibuprofen (200mg)',
-        'zantac': 'Ranitidine (150mg)',
-        'prilosec': 'Omeprazole (20mg)',
-        'losec': 'Omeprazole (20mg)',
-        'glucophage': 'Metformin (500mg)',
-        'cidophage': 'Metformin (500mg)',
-        'metformin': 'Metformin (500mg)',
-        'norvasc': 'Amlodipine (5mg)',
-        'amlor': 'Amlodipine (5mg)',
-        'lipitor': 'Atorvastatin (20mg)',
-        'atorvastatin': 'Atorvastatin (20mg)',
-        'concor': 'Bisoprolol (5mg)',
-        'bisoprolol': 'Bisoprolol (5mg)',
-        'augmentin': 'Amoxicillin + Clavulanic acid (875mg + 125mg)',
-        'amoxicillin': 'Amoxicillin (500mg)',
-        'voltaren': 'Diclofenac (50mg)',
-        'cataflam': 'Diclofenac (50mg)',
-        'diclofenac': 'Diclofenac (50mg)',
-        'claritin': 'Loratadine (10mg)',
-        'claritine': 'Loratadine (10mg)',
-        'loratadine': 'Loratadine (10mg)',
-        'zyrtec': 'Cetirizine (10mg)',
-        'alerid': 'Cetirizine (10mg)',
-        'cetirizine': 'Cetirizine (10mg)',
-        'ozempic': 'Semaglutide (0.5mg/1mg)',
-        'semaglutide': 'Semaglutide (0.5mg/1mg)',
-        'doxycycline': 'Doxycycline (100mg)',
-        'azithromycin': 'Azithromycin (250mg)',
-        'ciprofloxacin': 'Ciprofloxacin (500mg)'
+def extract_multiple_medicines_from_question(question: str) -> list:
+    """Extract multiple medicine names from a comparison question."""
+    # Common medicine names to look for (English and Arabic) - including common misspellings
+    medicine_names = [
+        'panadol', 'بانادول', 'البانادول', 'lipitor', 'ليبيتور', 'الليبيتور', 
+        'claritine', 'claritin', 'claratyne', 'prozac', 'zoloft', 'augmentin', 'أوجمنتين', 'الأوجمنتين',
+        'voltaren', 'فولتارين', 'الفولتارين', 'concor', 'كونكور', 'الكونكور', 
+        'norvasc', 'zocor', 'crestor', 'plavix', 'zyprexa', 'abilify', 'risperdal', 'seroquel',
+        'allegra', 'أليجرا', 'الأليجرا', 'zyrtec', 'زيرتيك', 'الزيرتيك', 
+        'benadryl', 'بينادريل', 'البينادريل', 'tylenol', 'advil', 'motrin', 'aspirin', 'أسبيرين', 'الأسبيرين',
+        'ozempic', 'lantus', 'humalog', 'glucophage', 'metformin', 'ميتفورمين', 'الميتفورمين',
+        'rivo', 'ريفو', 'الريفو', 'xarelto', 'cetirizine', 'سيتريزين', 'السيتريزين',
+        # Additional medicines - FIXED: Added missing medicines for comparison queries too
+        'aleve', 'naproxen', 'cozaar', 'losartan', 'nexium', 'esomeprazole', 'zantac', 'ranitidine',
+        'prilosec', 'omeprazole', 'celebrex', 'celecoxib', 'diovan', 'valsartan',
+        'protonix', 'pantoprazole', 'levothyroxine', 'synthroid', 'montelukast', 'singulair',
+        'atorvastatin', 'simvastatin', 'rosuvastatin', 'amlodipine', 'lisinopril', 'hydrochlorothiazide',
+        'warfarin', 'coumadin', 'digoxin', 'furosemide', 'lasix', 'metoprolol', 'carvedilol',
+        # Ibuprofen and common misspellings/brands
+        'ibuprofen', 'أيبوبروفين', 'الأيبوبروفين', 'brufen', 'ibubrufen', 'ibuprufen', 'ibuprophen', 'ibuprofene', 'ibufren',
+        'epipen', 'toprol xl', 'toprol',
+    ]
+    
+    question_lower = question.lower()
+    # FIXED: Initialize found_medicines at the beginning
+    found_medicines = []
+    
+    # ADDED: Debug output for misspelling detection
+    print(f"[DEBUG] [extract_multiple_medicines_from_question] Original question: '{question_lower}'")
+    print(f"[DEBUG] [extract_multiple_medicines_from_question] Checking misspellings...")
+    
+    # Handle common misspellings first
+    misspelling_mapping = {
+        'zertic': 'zyrtec',
+        'pndol': 'panadol',
+        'augmantin': 'augmentin',
+        'liptior': 'lipitor',
+        'liptor': 'lipitor',
+        'lipitur': 'lipitor',
+        'claritine': 'claritin',
+        'proices': 'prices',
+        # Ibuprofen misspellings/brands
+        'ibubrufen': 'ibuprofen',
+        'ibuprufen': 'ibuprofen',
+        'ibuprophen': 'ibuprofen',
+        'ibuprofene': 'ibuprofen',
+        'ibufren': 'ibuprofen',
+        'brufen': 'ibuprofen',
+        # FIXED: Add the missing misspelling for plavix
+        'palvix': 'plavix',
     }
     
-    ingredient = ingredients.get(medicine.lower())
-    if ingredient:
-        return f"**{medicine.title()}** contains: {ingredient}"
-    else:
-        return f"I don't have the active ingredient information for **{medicine.title()}** in my database. Please consult a healthcare professional or check the medicine packaging for detailed ingredient information."
+    # Check for exact misspellings first and correct them
+    for misspelling, correct_name in misspelling_mapping.items():
+        if misspelling in question_lower:
+            print(f"[DEBUG] [extract_multiple_medicines_from_question] Found misspelling '{misspelling}', correcting to '{correct_name}'")
+            if correct_name not in found_medicines:
+                found_medicines.append(correct_name)
+            # Replace misspelling in question for further processing
+            question_lower = question_lower.replace(misspelling, correct_name)
+        
+    print(f"[DEBUG] [extract_multiple_medicines_from_question] After misspelling correction: '{question_lower}'")
+    
+    found_medicines = []
+    
+    # First, try to convert Arabic text to English
+    if is_arabic_text(question):
+        print(f"[DEBUG] [extract_multiple_medicines_from_question] Arabic text detected: '{question}'")
+        english_conversion = arabic_to_english(question)
+        if english_conversion:
+            print(f"[DEBUG] [extract_multiple_medicines_from_question] Converted to English: '{english_conversion}'")
+            # Check if the converted English name is in our medicine list
+            if english_conversion.lower() in medicine_names:
+                if english_conversion.lower() not in found_medicines:
+                    found_medicines.append(english_conversion.lower())
+            # Also check if any medicine name is contained in the converted text
+            for medicine in medicine_names:
+                if medicine in english_conversion.lower() and medicine not in found_medicines:
+                    found_medicines.append(medicine)
+    
+    # Look for medicine names in the original question (after misspelling correction)
+    for medicine in medicine_names:
+        if medicine in question_lower and medicine not in found_medicines:
+            found_medicines.append(medicine)
+    
+    # Remove duplicates by normalizing to English equivalents
+    normalized_medicines = []
+    english_equivalents = set()  # Track English equivalents to avoid duplicates
+    
+    for medicine in found_medicines:
+        # Convert Arabic to English if possible
+        if is_arabic_text(medicine):
+            english_equivalent = arabic_to_english(medicine)
+            if english_equivalent:
+                # Only add if we haven't seen this English equivalent before
+                if english_equivalent not in english_equivalents:
+                    normalized_medicines.append(english_equivalent)
+                    english_equivalents.add(english_equivalent)
+            else:
+                # If no English equivalent found, keep the Arabic name
+                if medicine not in normalized_medicines:
+                    normalized_medicines.append(medicine)
+        else:
+            # For English names, check if we've already added an equivalent
+            if medicine not in english_equivalents and medicine not in normalized_medicines:
+                normalized_medicines.append(medicine)
+                english_equivalents.add(medicine)
+    
+    found_medicines = normalized_medicines
+    
+    print(f"[DEBUG] [extract_multiple_medicines_from_question] After normalization: {found_medicines}")
+    
+    # Ensure we have exactly 2 different medicines for comparison
+    if len(found_medicines) >= 2:
+        # Take the first 2 unique medicines
+        found_medicines = found_medicines[:2]
+    
+    print(f"[DEBUG] [extract_multiple_medicines_from_question] Found medicines: {found_medicines}")
+    return found_medicines
 
-def handle_warnings_question(medicine):
-    """Handle warnings and contraindications questions."""
-    warnings = {
-        'metformin': 'Should not be used by people with kidney disease, liver disease, or heart failure. May cause lactic acidosis in rare cases.',
-        'doxycycline': 'Should not be used during pregnancy, breastfeeding, or in children under 8 years old. Can cause tooth discoloration.',
-        'aspirin': 'Should not be given to children under 16 due to Reye\'s syndrome risk. Avoid if you have stomach ulcers or bleeding disorders.',
-        'ibuprofen': 'Should not be used by people with kidney disease, heart disease, or stomach ulcers. Avoid during pregnancy.',
-        'advil': 'Should not be used by people with kidney disease, heart disease, or stomach ulcers. Avoid during pregnancy.',
-        'brufen': 'Should not be used by people with kidney disease, heart disease, or stomach ulcers. Avoid during pregnancy.',
-        'atorvastatin': 'Should not be used during pregnancy or breastfeeding. Can cause muscle problems and liver damage.',
-        'lipitor': 'Should not be used during pregnancy or breastfeeding. Can cause muscle problems and liver damage.',
-        'augmentin': 'Should not be used if allergic to penicillin. May cause diarrhea and stomach upset.',
-        'amoxicillin': 'Should not be used if allergic to penicillin. May cause allergic reactions.',
-        'ozempic': 'Should not be used by people with type 1 diabetes or diabetic ketoacidosis. May cause pancreatitis.',
-        'semaglutide': 'Should not be used by people with type 1 diabetes or diabetic ketoacidosis. May cause pancreatitis.'
+def compare_medicines(medicine1: str, medicine2: str) -> str:
+    """Compare two medicines and provide differences."""
+    # Get information for both medicines
+    usage1 = get_medicine_usage(medicine1)
+    usage2 = get_medicine_usage(medicine2)
+    ingredients1 = get_active_ingredients(medicine1)
+    ingredients2 = get_active_ingredients(medicine2)
+    
+    # Get prices for both medicines
+    price1 = get_medicine_price(medicine1)
+    price2 = get_medicine_price(medicine2)
+    
+    comparison = f"**Comparison between {medicine1.title()} and {medicine2.title()}:**\n\n"
+    
+    # Compare active ingredients
+    comparison += f"**Active Ingredients:**\n"
+    comparison += f"• {medicine1.title()}: {', '.join(ingredients1) if ingredients1 else 'Not available'}\n"
+    comparison += f"• {medicine2.title()}: {', '.join(ingredients2) if ingredients2 else 'Not available'}\n\n"
+    
+    # Compare usage
+    comparison += f"**Usage:**\n"
+    comparison += f"• {medicine1.title()}: {usage1}\n"
+    comparison += f"• {medicine2.title()}: {usage2}\n\n"
+    
+    # Compare prices
+    comparison += f"**Pricing:**\n"
+    comparison += f"• {medicine1.title()}: {price1}\n"
+    comparison += f"• {medicine2.title()}: {price2}\n\n"
+    
+    # Add key differences
+    comparison += "**Key Differences:**\n"
+    if ingredients1 != ingredients2:
+        comparison += "• They have different active ingredients\n"
+    else:
+        comparison += "• They have similar active ingredients\n"
+    
+    # Add generic advice
+    comparison += "• Always consult your doctor before switching between medicines\n"
+    comparison += "• Dosage and administration may differ\n"
+    comparison += "• Side effects and contraindications may vary\n"
+    
+    return comparison
+
+def get_comprehensive_medicine_info(medicine_name: str) -> dict:
+    """Get comprehensive medicine information from APIs with local DB as fallback"""
+    print(f"[DEBUG] [get_comprehensive_medicine_info] Getting comprehensive info for: {medicine_name}")
+    
+    medicine_info = {
+        'name': medicine_name,
+        'active_ingredients': [],
+        'usage': '',
+        'contraindications': '',
+        'side_effects': '',
+        'warnings': '',
+        'dosage': '',
+        'drug_interactions': '',
+        'generic_name': '',
+        'found_in': []
     }
     
-    warning = warnings.get(medicine.lower())
-    if warning:
-        return f"**{medicine.title()}** warnings: {warning}\n\n**Important**: Always consult your healthcare provider before taking any medication."
-    else:
-        return f"I don't have specific warning information for **{medicine.title()}** in my database. Please consult a healthcare professional or pharmacist for detailed safety information."
-
-def handle_special_populations_question(medicine):
-    """Handle pregnancy, pediatric, and special population questions."""
-    special_info = {
-        'metformin': 'Generally safe during pregnancy (Category B). Can be used in children over 10 years old.',
-        'doxycycline': 'NOT safe during pregnancy (Category D). NOT recommended for children under 8 years old.',
-        'loratadine': 'Generally safe during pregnancy (Category B). Can be used in children over 2 years old.',
-        'cetirizine': 'Generally safe during pregnancy (Category B). Can be used in children over 6 months old.',
-        'claritin': 'Generally safe during pregnancy (Category B). Can be used in children over 2 years old.',
-        'claritine': 'Generally safe during pregnancy (Category B). Can be used in children over 2 years old.',
-        'zyrtec': 'Generally safe during pregnancy (Category B). Can be used in children over 6 months old.',
-        'alerid': 'Generally safe during pregnancy (Category B). Can be used in children over 6 months old.',
-        'paracetamol': 'Safe during pregnancy and breastfeeding. Can be used in children over 3 months old.',
-        'panadol': 'Safe during pregnancy and breastfeeding. Can be used in children over 3 months old.',
-        'tylenol': 'Safe during pregnancy and breastfeeding. Can be used in children over 3 months old.',
-        'ibuprofen': 'Avoid during pregnancy, especially third trimester. Can be used in children over 6 months old.',
-        'advil': 'Avoid during pregnancy, especially third trimester. Can be used in children over 6 months old.',
-        'brufen': 'Avoid during pregnancy, especially third trimester. Can be used in children over 6 months old.',
-        'augmentin': 'Generally safe during pregnancy (Category B). Pediatric dosing available.',
-        'amoxicillin': 'Generally safe during pregnancy (Category B). Pediatric dosing available.'
-    }
+    # PRIORITY 1: Try RxNav API
+    try:
+        success, drug_info, error = rxnav_api.get_drug_info(medicine_name)
+        if success and drug_info:
+            print(f"[DEBUG] [get_comprehensive_medicine_info] Found data in RxNav")
+            medicine_info['found_in'].append('RxNav')
+            
+            if drug_info.get('usage_text') and drug_info['usage_text'] != 'Usage information not available':
+                medicine_info['usage'] = drug_info['usage_text']
+            
+            if drug_info.get('generic_name'):
+                medicine_info['generic_name'] = drug_info['generic_name']
+                medicine_info['active_ingredients'].append(drug_info['generic_name'])
+            
+            if drug_info.get('drug_name') and drug_info['drug_name'] not in medicine_info['active_ingredients']:
+                medicine_info['active_ingredients'].append(drug_info['drug_name'])
+    except Exception as e:
+        print(f"[DEBUG] [get_comprehensive_medicine_info] RxNav error: {e}")
     
-    info = special_info.get(medicine.lower())
-    if info:
-        return f"**{medicine.title()}** for special populations: {info}\n\n**Important**: Always consult your healthcare provider before taking any medication during pregnancy or giving to children."
-    else:
-        return f"I don't have specific information about **{medicine.title()}** use in special populations. Please consult a healthcare professional for guidance on use during pregnancy or in children."
+    # PRIORITY 2: Try to get more detailed info from openFDA if we have the generic name
+    if medicine_info['generic_name'] or medicine_info['active_ingredients']:
+        try:
+            print(f"[DEBUG] [get_comprehensive_medicine_info] Trying openFDA")
+            # Add openFDA lookup here for detailed information
+            # This would typically query the FDA drug database for detailed labeling info
+        except Exception as e:
+            print(f"[DEBUG] [get_comprehensive_medicine_info] openFDA error: {e}")
+    
+    # PRIORITY 3: Try DailyMed for comprehensive labeling information
+    try:
+        print(f"[DEBUG] [get_comprehensive_medicine_info] Trying DailyMed")
+        # Add DailyMed lookup here for comprehensive drug labeling
+    except Exception as e:
+        print(f"[DEBUG] [get_comprehensive_medicine_info] DailyMed error: {e}")
+    
+    # LAST RESORT: Fill gaps with local database
+    print(f"[DEBUG] [get_comprehensive_medicine_info] Filling gaps with local database")
+    
+    # Get active ingredients from local DB if not found in APIs
+    if not medicine_info['active_ingredients']:
+        local_ingredients = get_active_ingredients(medicine_name)
+        if local_ingredients:
+            medicine_info['active_ingredients'] = local_ingredients
+            medicine_info['found_in'].append('Local DB (ingredients)')
+    
+    # Get usage from local DB if not found in APIs
+    if not medicine_info['usage']:
+        local_usage = get_local_usage(medicine_name)
+        if local_usage:
+            medicine_info['usage'] = local_usage
+            medicine_info['found_in'].append('Local DB (usage)')
+    
+    print(f"[DEBUG] [get_comprehensive_medicine_info] Final info: {medicine_info}")
+    return medicine_info
 
+def get_active_ingredients_api_first(medicine_name: str) -> list:
+    """Get active ingredients with API-first approach, robust fallback, and user-friendly error handling."""
+    print(f"[DEBUG] [get_active_ingredients_api_first] Getting ingredients for: {medicine_name}")
+    errors = []
+    # PRIORITY 1: Try RxNav API FIRST (external API priority)
+    try:
+        success, drug_info, error = rxnav_api.get_drug_info(medicine_name)
+        if success and drug_info:
+            ingredients = []
+            if drug_info.get('generic_name'):
+                ingredients.append(drug_info['generic_name'])
+                print(f"[DEBUG] [get_active_ingredients_api_first] Found generic name in RxNav: {drug_info['generic_name']}")
+            if drug_info.get('drug_name'):
+                drug_name = drug_info.get('full_rxnorm_name', drug_info['drug_name'])
+                print(f"[DEBUG] [get_active_ingredients_api_first] Parsing drug name: {drug_name}")
+                parsed_ingredient = extract_active_ingredient_from_drug_name(drug_name)
+                if parsed_ingredient and parsed_ingredient not in ingredients and parsed_ingredient.lower() != medicine_name.lower():
+                    ingredients.append(parsed_ingredient)
+                    print(f"[DEBUG] [get_active_ingredients_api_first] Extracted ingredient from drug name: {parsed_ingredient}")
+            if drug_info.get('rxcui'):
+                rxcui = drug_info['rxcui']
+                print(f"[DEBUG] [get_active_ingredients_api_first] Trying detailed lookup with RxCUI: {rxcui}")
+                try:
+                    detailed_ingredients = get_ingredients_from_rxcui(rxcui)
+                    for ingredient in detailed_ingredients:
+                        if ingredient not in ingredients and ingredient.lower() != medicine_name.lower():
+                            ingredients.append(ingredient)
+                            print(f"[DEBUG] [get_active_ingredients_api_first] Found additional ingredient: {ingredient}")
+                except Exception as e:
+                    print(f"[DEBUG] [get_active_ingredients_api_first] RxNav detailed lookup error: {e}")
+            if drug_info.get('rxcui') and not ingredients:
+                print(f"[DEBUG] [get_active_ingredients_api_first] Trying advanced RxNav parsing")
+                try:
+                    advanced_ingredients = get_ingredients_from_rxnav_advanced(drug_info['rxcui'], medicine_name)
+                    if advanced_ingredients:
+                        ingredients.extend(advanced_ingredients)
+                except Exception as e:
+                    print(f"[DEBUG] [get_active_ingredients_api_first] RxNav advanced parsing error: {e}")
+            if ingredients:
+                cleaned_ingredients = []
+                for ingredient in ingredients:
+                    cleaned = clean_ingredient_name(ingredient)
+                    if cleaned and cleaned not in cleaned_ingredients and cleaned.lower() != medicine_name.lower():
+                        cleaned_ingredients.append(cleaned)
+                print(f"[DEBUG] [get_active_ingredients_api_first] Final cleaned ingredients from RxNav: {cleaned_ingredients}")
+                if cleaned_ingredients:
+                    return cleaned_ingredients
+    except Exception as e:
+        print(f"[DEBUG] [get_active_ingredients_api_first] RxNav error: {e}")
+        errors.append(f"RxNav: {e}")
+    # PRIORITY 2: Try Egyptian Medicine API
+    try:
+        print(f"[DEBUG] [get_active_ingredients_api_first] Trying Egyptian Medicine API")
+        ingredients = get_ingredients_from_egyptian_api(medicine_name)
+        if ingredients:
+            filtered_ingredients = [ing for ing in ingredients if ing.lower() != medicine_name.lower()]
+            if filtered_ingredients:
+                print(f"[DEBUG] [get_active_ingredients_api_first] Found in Egyptian API: {filtered_ingredients}")
+                return filtered_ingredients
+    except Exception as e:
+        print(f"[DEBUG] [get_active_ingredients_api_first] Egyptian API error: {e}")
+        errors.append(f"Egyptian API: {e}")
+    # PRIORITY 3: Try to extract generic name using trade name mapping (enhanced)
+    try:
+        print(f"[DEBUG] [get_active_ingredients_api_first] Trying generic name extraction")
+        generic_name = extract_generic_name_from_trade_name(medicine_name)
+        if generic_name and generic_name.lower() != medicine_name.lower():
+            print(f"[DEBUG] [get_active_ingredients_api_first] Found generic name: {generic_name}")
+            return [generic_name.title()]
+    except Exception as e:
+        print(f"[DEBUG] [get_active_ingredients_api_first] Generic name extraction error: {e}")
+        errors.append(f"Generic name mapping: {e}")
+    # PRIORITY 4: Try OpenFDA API (if available)
+    try:
+        print(f"[DEBUG] [get_active_ingredients_api_first] Trying OpenFDA API")
+        fda_ingredients = get_ingredients_from_openfda(medicine_name)
+        if fda_ingredients:
+            filtered_fda = [ing for ing in fda_ingredients if ing.lower() != medicine_name.lower()]
+            if filtered_fda:
+                print(f"[DEBUG] [get_active_ingredients_api_first] Found in OpenFDA: {filtered_fda}")
+                return filtered_fda
+    except Exception as e:
+        print(f"[DEBUG] [get_active_ingredients_api_first] OpenFDA error: {e}")
+        errors.append(f"OpenFDA: {e}")
+    # LAST RESORT: Local database (only when ALL APIs fail)
+    try:
+        print(f"[DEBUG] [get_active_ingredients_api_first] ALL APIs failed, falling back to local database")
+        local_ingredients = get_active_ingredients(medicine_name)
+        if local_ingredients:
+            print(f"[DEBUG] [get_active_ingredients_api_first] Found in local database: {local_ingredients}")
+            return local_ingredients
+    except Exception as e:
+        print(f"[DEBUG] [get_active_ingredients_api_first] Local DB error: {e}")
+        errors.append(f"Local DB: {e}")
+    print(f"[DEBUG] [get_active_ingredients_api_first] No ingredients found anywhere. Errors: {errors}")
+    return []  # Let the caller return a user-friendly not found message
+
+def get_ingredients_from_rxnav_advanced(rxcui: str, medicine_name: str) -> list:
+    """Advanced parsing of RxNav data to extract active ingredients"""
+    try:
+        import requests
+        
+        # Try to get related concepts that might contain ingredient info
+        url = f"https://rxnav.nlm.nih.gov/REST/rxcui/{rxcui}/related.json"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            ingredients = []
+            
+            # Look for ingredient-related concepts
+            if 'relatedGroup' in data:
+                related_group = data['relatedGroup']
+                if 'conceptGroup' in related_group:
+                    for concept_group in related_group['conceptGroup']:
+                        if concept_group.get('tty') in ['IN', 'PIN']:  # Ingredient types
+                            if 'conceptProperties' in concept_group:
+                                for concept in concept_group['conceptProperties']:
+                                    name = concept.get('name', '')
+                                    if name and name.lower() != medicine_name.lower():
+                                        ingredients.append(name.title())
+                                        print(f"[DEBUG] [get_ingredients_from_rxnav_advanced] Found ingredient concept: {name}")
+            
+            return ingredients
+            
+    except Exception as e:
+        print(f"[DEBUG] [get_ingredients_from_rxnav_advanced] Error: {e}")
+    
+    return []
+
+def get_ingredients_from_openfda(medicine_name: str) -> list:
+    """Get active ingredients from OpenFDA API"""
+    try:
+        import requests
+        
+        # Search OpenFDA drug database
+        url = "https://api.fda.gov/drug/label.json"
+        params = {
+            'search': f'openfda.brand_name:"{medicine_name}"',
+            'limit': 1
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if 'results' in data and data['results']:
+                result = data['results'][0]
+                
+                # Try to extract from active_ingredient field
+                if 'active_ingredient' in result:
+                    active_ingredients = result['active_ingredient']
+                    if isinstance(active_ingredients, list) and active_ingredients:
+                        # Parse the active ingredient text
+                        ingredient_text = active_ingredients[0]
+                        # Extract ingredient name (usually before dosage info)
+                        import re
+                        match = re.match(r'^([A-Za-z\s]+)', ingredient_text)
+                        if match:
+                            ingredient = match.group(1).strip().title()
+                            print(f"[DEBUG] [get_ingredients_from_openfda] Found active ingredient: {ingredient}")
+                            return [ingredient]
+                
+                # Try to extract from openfda.generic_name
+                if 'openfda' in result and 'generic_name' in result['openfda']:
+                    generic_names = result['openfda']['generic_name']
+                    if isinstance(generic_names, list) and generic_names:
+                        ingredient = generic_names[0].title()
+                        print(f"[DEBUG] [get_ingredients_from_openfda] Found generic name: {ingredient}")
+                        return [ingredient]
+                        
+    except Exception as e:
+        print(f"[DEBUG] [get_ingredients_from_openfda] Error: {e}")
+    
+    return []
+
+def extract_active_ingredient_from_drug_name(drug_name: str) -> str:
+    """
+    Extract active ingredient from structured drug name returned by RxNav API.
+    Example: "cephalexin 500 MG Oral Capsule [Keflex]" → "Cephalexin"
+    Example: "albuterol 0.09 MG/ACTUAT Metered Dose Inhaler [Ventolin]" → "Albuterol"
+    Example: "{6 (azithromycin 250 MG Oral Tablet [Zithromax]) } Pack [Z-PAK]" → "Azithromycin"
+    """
+    if not drug_name:
+        return ""
+    
+    print(f"[DEBUG] [extract_active_ingredient_from_drug_name] Processing: '{drug_name}'")
+    
+    # FIXED: Handle complex pack formats first
+    # Extract from patterns like "{6 (azithromycin 250 MG Oral Tablet [Zithromax]) } Pack"
+    pack_pattern = r'\{\d+\s*\(\s*([a-zA-Z]+)\s+\d+.*?\)\s*\}'
+    pack_match = re.search(pack_pattern, drug_name)
+    if pack_match:
+        ingredient = pack_match.group(1).strip()
+        print(f"[DEBUG] [extract_active_ingredient_from_drug_name] Extracted from pack format: '{ingredient}'")
+        return ingredient.title()
+    
+    # Remove brand name in brackets [Brand]
+    drug_name = re.sub(r'\[.*?\]', '', drug_name).strip()
+    print(f"[DEBUG] [extract_active_ingredient_from_drug_name] After removing brand: '{drug_name}'")
+    
+    # Remove common prefixes that aren't ingredients
+    prefixes_to_remove = [
+        r'^NDA\d+\s+',  # Remove "NDA020983 60 ACTUAT"
+        r'^\d+\s+ACTUAT\s+',  # Remove "60 ACTUAT"
+        r'^\d+\s+',  # Remove leading numbers
+    ]
+    
+    for prefix in prefixes_to_remove:
+        drug_name = re.sub(prefix, '', drug_name).strip()
+        print(f"[DEBUG] [extract_active_ingredient_from_drug_name] After removing prefix: '{drug_name}'")
+    
+    # Split by dosage patterns to get the active ingredient part
+    # Common patterns: "0.05 MG", "50 MCG", "20 mg", etc.
+    dosage_patterns = [
+        r'\d+\.?\d*\s*(MG|MCG|mg|mcg|g|ml|IU|units?|%)',
+        r'\d+\.?\d*\s*MG/ACTUAT',
+        r'\d+\.?\d*\s*MCG/ACTUAT',
+    ]
+    
+    for pattern in dosage_patterns:
+        match = re.search(pattern, drug_name, re.IGNORECASE)
+        if match:
+            # Extract everything before the dosage
+            ingredient_part = drug_name[:match.start()].strip()
+            if ingredient_part:
+                print(f"[DEBUG] [extract_active_ingredient_from_drug_name] Found ingredient before dosage: '{ingredient_part}'")
+                return ingredient_part.title()
+    
+    # If no dosage pattern found, try to extract first part before common keywords
+    form_keywords = ['tablet', 'capsule', 'injection', 'spray', 'cream', 'gel', 'solution', 'suspension', 'inhaler', 'metered', 'dose', 'oral']
+    for keyword in form_keywords:
+        if keyword.lower() in drug_name.lower():
+            parts = drug_name.lower().split(keyword.lower())
+            if parts[0].strip():
+                ingredient = parts[0].strip().title()
+                print(f"[DEBUG] [extract_active_ingredient_from_drug_name] Found ingredient before '{keyword}': '{ingredient}'")
+                return ingredient
+    
+    # If all else fails, return the first few words (likely the ingredient)
+    words = drug_name.split()
+    if len(words) >= 2:
+        ingredient = ' '.join(words[:2]).title()
+        print(f"[DEBUG] [extract_active_ingredient_from_drug_name] Using first 2 words: '{ingredient}'")
+        return ingredient
+    elif len(words) == 1:
+        ingredient = words[0].title()
+        print(f"[DEBUG] [extract_active_ingredient_from_drug_name] Using single word: '{ingredient}'")
+        return ingredient
+    
+    print(f"[DEBUG] [extract_active_ingredient_from_drug_name] No ingredient found")
+    return ""
+
+def get_ingredients_from_rxcui(rxcui: str) -> list:
+    """Get detailed ingredient information using RxCUI"""
+    try:
+        # This could be enhanced to make additional API calls to get more detailed info
+        # For now, return empty list but this is where you could add more API calls
+        return []
+    except Exception as e:
+        print(f"[DEBUG] [get_ingredients_from_rxcui] Error: {e}")
+        return []
+
+def get_ingredients_from_egyptian_api(medicine_name: str) -> list:
+    """Extract active ingredients from Egyptian Medicine API response"""
+    try:
+        success, products, error = medicine_api.search_and_get_details(medicine_name)
+        if success and products:
+            ingredients = []
+            for product in products:
+                # Check if product has components field
+                if product.get('components'):
+                    components = product['components']
+                    if isinstance(components, list):
+                        ingredients.extend(components)
+                    elif isinstance(components, str):
+                        ingredients.append(components)
+                
+                # Try to extract from description or other fields
+                description = product.get('desc', '') or product.get('description', '') or product.get('msg', '')
+                if description:
+                    print(f"[DEBUG] [get_ingredients_from_egyptian_api] Processing description: '{description}'")
+                    # Try to parse ingredient from Arabic text
+                    ingredient = extract_ingredient_from_arabic_text(description)
+                    if ingredient and ingredient not in ingredients:
+                        ingredients.append(ingredient)
+                        print(f"[DEBUG] [get_ingredients_from_egyptian_api] Extracted ingredient: '{ingredient}'")
+            
+            # Remove duplicates and filter out invalid ingredients
+            unique_ingredients = []
+            for ingredient in ingredients:
+                if ingredient and ingredient not in unique_ingredients and ingredient.lower() != medicine_name.lower():
+                    unique_ingredients.append(ingredient)
+            
+            return unique_ingredients
+        
+        return []
+    except Exception as e:
+        print(f"[DEBUG] [get_ingredients_from_egyptian_api] Error: {e}")
+        return []
+
+def extract_ingredient_from_arabic_text(text: str) -> str:
+    """Extract active ingredient from Arabic description text"""
+    try:
+        print(f"[DEBUG] [extract_ingredient_from_arabic_text] Processing: '{text}'")
+        
+        # Enhanced Arabic-to-English mappings based on actual API responses
+        arabic_mappings = {
+            'سيفاليكسين': 'Cephalexin',
+            'سالبوتامول': 'Albuterol', 
+            'أموكسيسيلين': 'Amoxicillin',
+            'فلوتيكاسون': 'Fluticasone propionate',
+            'لوراتادين': 'Loratadine',
+            'سيتريزين': 'Cetirizine',
+            'ايبوبروفين': 'Ibuprofen',
+            'ديكلوفيناك': 'Diclofenac',
+            'باراسيتامول': 'Paracetamol',
+            'أسيتامينوفين': 'Acetaminophen',
+            'أتورفاستاتين': 'Atorvastatin',
+            'سيمفاستاتين': 'Simvastatin',
+            'أوميبرازول': 'Omeprazole',
+            'رانيتيدين': 'Ranitidine',
+            'مونتيلوكاست': 'Montelukast',
+            'ليفوثيروكسين': 'Levothyroxine',
+            'ميتفورمين': 'Metformin',
+            'أملوديبين': 'Amlodipine',
+            'ليسينوبريل': 'Lisinopril',
+            'هيدروكلوروثيازيد': 'Hydrochlorothiazide'
+        }
+        
+        # Check for direct matches in the text
+        for arabic_name, english_name in arabic_mappings.items():
+            if arabic_name in text:
+                print(f"[DEBUG] [extract_ingredient_from_arabic_text] Found ingredient: '{arabic_name}' → '{english_name}'")
+                return english_name
+        
+        # Try to extract ingredient after common Arabic phrases
+        # "تحتوي على" means "contains"
+        # "يحتوي على" means "contains" (masculine form)
+        contains_patterns = [
+            r'تحتوي على\s+([^\s،.]+)',
+            r'يحتوي على\s+([^\s،.]+)',
+            r'تحتوى على\s+([^\s،.]+)',
+            r'يحتوى على\s+([^\s،.]+)',
+        ]
+        
+        for pattern in contains_patterns:
+            match = re.search(pattern, text)
+            if match:
+                potential_ingredient = match.group(1).strip()
+                print(f"[DEBUG] [extract_ingredient_from_arabic_text] Found potential ingredient after 'contains': '{potential_ingredient}'")
+                # Check if this matches any of our known mappings
+                for arabic_name, english_name in arabic_mappings.items():
+                    if arabic_name in potential_ingredient:
+                        print(f"[DEBUG] [extract_ingredient_from_arabic_text] Matched to: '{english_name}'")
+                        return english_name
+        
+        print(f"[DEBUG] [extract_ingredient_from_arabic_text] No ingredient found")
+        return ""
+    except Exception as e:
+        print(f"[DEBUG] [extract_ingredient_from_arabic_text] Error: {e}")
+        return ""
+
+def clean_ingredient_name(ingredient: str) -> str:
+    """Clean and standardize ingredient name"""
+    if not ingredient:
+        return ""
+    
+    # Remove extra whitespace
+    cleaned = re.sub(r'\s+', ' ', ingredient.strip())
+    
+    # Capitalize properly
+    cleaned = cleaned.title()
+    
+    # Handle special cases
+    if cleaned.lower() == 'acetaminophen':
+        return 'Acetaminophen'
+    elif cleaned.lower() == 'paracetamol':
+        return 'Paracetamol'
+    elif 'fluticasone' in cleaned.lower():
+        return 'Fluticasone propionate'
+    
+    return cleaned
+
+# Add other necessary routes and functions here... 

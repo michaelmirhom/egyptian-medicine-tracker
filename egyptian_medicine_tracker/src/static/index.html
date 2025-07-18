@@ -944,6 +944,7 @@
                 if (result.success && result.products.length > 0) {
                     // Display real-time results
                     displayRealTimeMedicines(result.products);
+                    updateStats(result.products);
                     showMessage(`Found ${result.products.length} medicines from real-time API`, 'success');
                 } else {
                     // Fallback to local search if no API results
@@ -1042,15 +1043,15 @@
             }
         }
 
-        function updateStats() {
-            const totalMedicines = allMedicines.length;
-            const medicinesWithPrices = allMedicines.filter(m => m.price);
+        function updateStats(medicines = allMedicines) {
+            const totalMedicines = medicines.length;
+            const medicinesWithPrices = medicines.filter(m => m.price);
             const avgPrice = medicinesWithPrices.length > 0
                 ? (medicinesWithPrices.reduce((sum, m) => sum + m.price, 0) / medicinesWithPrices.length).toFixed(2)
                 : 0;
 
-            const lastUpdated = allMedicines.length > 0
-                ? Math.max(...allMedicines.map(m => new Date(m.last_updated).getTime()))
+            const lastUpdated = medicines.length > 0
+                ? Math.max(...medicines.map(m => new Date(m.last_updated).getTime()))
                 : null;
 
             document.getElementById('totalMedicines').textContent = totalMedicines;
@@ -1144,7 +1145,6 @@
             }
         })();
     </script>
-    <script src="/static/js/chat.js"></script>
 </body>
 
 </html>

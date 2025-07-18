@@ -41,6 +41,17 @@ LOCAL_USAGE_DATABASE = {
     "acetaminophen": "Acetaminophen (paracetamol) is used to reduce fever and treat pain such as headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
     "ibuprofen": "Ibuprofen is used to reduce fever and treat pain or inflammation caused by many conditions such as headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
     "aspirin": "Aspirin is used to reduce fever and relieve mild to moderate pain from conditions such as muscle aches, toothaches, common cold, and headaches. It is also used to prevent heart attacks and strokes.",
+    # NSAIDs
+    "aleve": "Aleve (naproxen) is used to temporarily relieve minor aches and pains due to arthritis, muscular aches, backache, menstrual cramps, headache, toothache, and the common cold. It is also used to temporarily reduce fever.",
+    "naproxen": "Naproxen is used to relieve pain from various conditions such as headache, muscle aches, tendonitis, dental pain, and menstrual cramps. It also reduces pain, swelling, and joint stiffness caused by arthritis, bursitis, and gout attacks.",
+    "voltaren": "Voltaren (diclofenac) is used to relieve pain, swelling, and joint stiffness caused by arthritis. It is also used to treat pain and swelling caused by sprains, strains, and other injuries.",
+    "diclofenac": "Diclofenac is used to relieve pain, swelling, and joint stiffness caused by arthritis. It is also used to treat pain and swelling caused by sprains, strains, and other injuries.",
+    
+    # Blood pressure medications
+    "cozaar": "Cozaar (losartan) is used to treat high blood pressure (hypertension) and to help protect the kidneys from damage due to diabetes. It may also be used to reduce the risk of stroke in certain patients with heart disease.",
+    "losartan": "Losartan is used to treat high blood pressure (hypertension) and to help protect the kidneys from damage due to diabetes. It may also be used to reduce the risk of stroke in certain patients with heart disease.",
+    "norvasc": "Norvasc (amlodipine) is used to treat high blood pressure and chest pain (angina). Lowering high blood pressure helps prevent strokes, heart attacks, and kidney problems.",
+    "amlodipine": "Amlodipine is used to treat high blood pressure and chest pain (angina). Lowering high blood pressure helps prevent strokes, heart attacks, and kidney problems.",
     
     # Antihistamines
     "claritine": "Claritine (loratadine) is used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing. It is an antihistamine that works by blocking histamine, a substance in the body that causes allergic symptoms.",

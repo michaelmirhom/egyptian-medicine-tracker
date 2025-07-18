@@ -18,15 +18,15 @@ class RxNavAPI:
             "User-Agent": "HarbyPharmacy/1.0"
         })
     
-    def get_rxcui(self, drug_name: str) -> Optional[str]:
+    def get_rxcui(self, drug_name: str) -> Tuple[Optional[str], Optional[str]]:
         """
-        Get RxCUI (drug identifier) from drug name
+        Get RxCUI (drug identifier) and full RxNorm name from drug name
         
         Args:
             drug_name (str): Drug name to search for
             
         Returns:
-            Optional[str]: RxCUI if found, None otherwise
+            Tuple[Optional[str], Optional[str]]: (rxcui, full_rxnorm_name) if found, (None, None) otherwise
         """
         try:
             url = f"{self.base_url}/drugs"
@@ -44,21 +44,23 @@ class RxNavAPI:
                     if 'conceptProperties' in concept_group:
                         for concept in concept_group['conceptProperties']:
                             if 'rxcui' in concept:
-                                print(f"[DEBUG] [get_rxcui] Found rxcui: {concept['rxcui']}")
-                                return concept['rxcui']
+                                rxcui = concept['rxcui']
+                                full_name = concept.get('name', drug_name)  # Get the full structured name
+                                print(f"[DEBUG] [get_rxcui] Found rxcui: {rxcui}, full_name: '{full_name}'")
+                                return rxcui, full_name
             
             print(f"[DEBUG] [get_rxcui] No rxcui found for '{drug_name}'")
-            return None
+            return None, None
             
         except requests.exceptions.RequestException as e:
             print(f"[DEBUG] [get_rxcui] Request error: {str(e)}")
-            return None
+            return None, None
         except (KeyError, IndexError) as e:
             print(f"[DEBUG] [get_rxcui] Data parsing error: {str(e)}")
-            return None
+            return None, None
         except Exception as e:
             print(f"[DEBUG] [get_rxcui] Unexpected error: {str(e)}")
-            return None
+            return None, None
     
     def get_usage_info(self, rxcui: str) -> Tuple[bool, List[str], str]:
         """
@@ -135,8 +137,8 @@ class RxNavAPI:
         """
         print(f"[DEBUG] [get_drug_info] Called with drug_name='{drug_name}'")
         # Get RxCUI first
-        rxcui = self.get_rxcui(drug_name)
-        print(f"[DEBUG] [get_drug_info] get_rxcui returned: {rxcui}")
+        rxcui, full_name = self.get_rxcui(drug_name)
+        print(f"[DEBUG] [get_drug_info] get_rxcui returned: rxcui={rxcui}, full_name='{full_name}'")
         
         if not rxcui:
             print(f"[DEBUG] [get_drug_info] Drug '{drug_name}' not found in RxNav database")
@@ -165,6 +167,7 @@ class RxNavAPI:
         drug_info = {
             'rxcui': rxcui,
             'drug_name': drug_name,
+            'full_rxnorm_name': full_name,
             'usage': usage_list,
             'usage_text': usage_text
         }

@@ -3,64 +3,86 @@ Local database of common medicine uses as fallback
 """
 
 COMMON_MEDICINE_USES = {
-    # Pain relievers
     "panadol": "Used to treat fever and mild to moderate pain including headache, muscle aches, arthritis, backache, toothaches, colds, and fevers.",
-    "paracetamol": "Used to treat fever and mild to moderate pain including headache, muscle aches, arthritis, backache, toothaches, colds, and fevers.",
-    "aspirin": "Used to reduce fever and relieve mild to moderate pain from conditions such as muscle aches, toothaches, common cold, and headaches. Also used to prevent heart attacks and strokes.",
-    "ibuprofen": "Used to reduce fever and treat pain or inflammation caused by many conditions such as headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
-    
-    # Antibiotics
-    "augmentin": "Used to treat bacterial infections including sinusitis, pneumonia, ear infections, bronchitis, urinary tract infections, and skin infections.",
-    "amoxicillin": "Used to treat a wide variety of bacterial infections including bronchitis, pneumonia, and infections of the ear, nose, throat, skin, or urinary tract.",
-    "azithromycin": "Used to treat many different types of infections caused by bacteria, including infections of the lungs, skin, ears, and reproductive organs.",
-    
-    # Anti-inflammatory
-    "voltaren": "Used to reduce pain, swelling, and joint stiffness caused by arthritis. Also used for acute pain, muscle pain, and inflammation.",
-    "diclofenac": "Used to reduce pain, swelling, and joint stiffness caused by arthritis. Also used for acute pain, muscle pain, and inflammation.",
-    
-    # Heart medications
-    "concor": "Used to treat high blood pressure and heart failure. Helps reduce the risk of heart attacks and strokes.",
-    "bisoprolol": "Used to treat high blood pressure and heart failure. Helps reduce the risk of heart attacks and strokes.",
-    "lipitor": "Used to lower cholesterol and triglycerides in the blood. Helps prevent heart disease, heart attacks, and strokes.",
-    "atorvastatin": "Used to lower cholesterol and triglycerides in the blood. Helps prevent heart disease, heart attacks, and strokes.",
-    
-    # Allergy medications
-    "cetirizine": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing. Also used to relieve itching and hives.",
-    "loratadine": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing. Also used to relieve itching and hives.",
-    "claritine": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing. Also used to relieve itching and hives.",
-    "claritin": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing. Also used to relieve itching and hives.",
-    
-    # Stomach medications
-    "omeprazole": "Used to treat certain stomach and esophagus problems such as acid reflux and ulcers. It decreases the amount of acid your stomach makes.",
-    "pantoprazole": "Used to treat certain stomach and esophagus problems such as acid reflux and ulcers. It decreases the amount of acid your stomach makes.",
-    
-    # Diabetes medications
-    "metformin": "Used to control high blood sugar in people with type 2 diabetes. It works by helping to restore your body's proper response to insulin.",
-    
-    # Common Egyptian brands
-    "rivo": "Used to treat fever and mild to moderate pain including headache, muscle aches, arthritis, backache, toothaches, colds, and fevers.",
-    "cataflam": "Used to reduce pain, swelling, and joint stiffness caused by arthritis. Also used for acute pain, muscle pain, and inflammation.",
-    "augmentin": "Used to treat bacterial infections including sinusitis, pneumonia, ear infections, bronchitis, urinary tract infections, and skin infections.",
-    
-    # Additional trade names
+    "lipitor": "Used to lower cholesterol and reduce the risk of heart disease and stroke.",
+    "claritine": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing.",
+    "claritin": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing.",
+    "claratyne": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing.",
+    "concor": "Used to treat high blood pressure and reduce the risk of heart attacks and strokes.",
+    "voltaren": "Used to relieve pain, swelling, and joint stiffness caused by arthritis.",
+    "rivo": "Used to prevent blood clots and reduce the risk of stroke and heart attack.",
+    "augmentin": "Used to treat bacterial infections including pneumonia, bronchitis, and infections of the ear, nose, throat, urinary tract, and skin.",
+    "prozac": "Used to treat depression, panic attacks, obsessive-compulsive disorder, and bulimia.",
+    "zoloft": "Used to treat depression, panic attacks, obsessive-compulsive disorder, post-traumatic stress disorder, and social anxiety disorder.",
     "tylenol": "Used to treat fever and mild to moderate pain including headache, muscle aches, arthritis, backache, toothaches, colds, and fevers.",
-    "advil": "Used to reduce fever and treat pain or inflammation caused by many conditions such as headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
-    "brufen": "Used to reduce fever and treat pain or inflammation caused by many conditions such as headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
-    "motrin": "Used to reduce fever and treat pain or inflammation caused by many conditions such as headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
-    "zantac": "Used to treat stomach ulcers, gastroesophageal reflux disease (GERD), and conditions where the stomach produces too much acid.",
-    "rantag": "Used to treat stomach ulcers, gastroesophageal reflux disease (GERD), and conditions where the stomach produces too much acid.",
-    "ranitin": "Used to treat stomach ulcers, gastroesophageal reflux disease (GERD), and conditions where the stomach produces too much acid.",
+    "advil": "Used to reduce fever and treat pain or inflammation caused by headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
+    "motrin": "Used to reduce fever and treat pain or inflammation caused by headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
+    "ibuprofen": "Used to reduce fever and treat pain or inflammation caused by headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
+    "brufen": "Used to reduce fever and treat pain or inflammation caused by headache, toothache, back pain, arthritis, menstrual cramps, or minor injury.",
+    "aspirin": "Used to reduce fever and relieve mild to moderate pain from headaches, muscle aches, toothaches, and colds. Also used to prevent heart attacks and strokes.",
+    "omeprazole": "Used to treat certain stomach and esophagus problems such as acid reflux and ulcers. It decreases the amount of acid your stomach makes.",
     "prilosec": "Used to treat certain stomach and esophagus problems such as acid reflux and ulcers. It decreases the amount of acid your stomach makes.",
     "losec": "Used to treat certain stomach and esophagus problems such as acid reflux and ulcers. It decreases the amount of acid your stomach makes.",
-    "glucophage": "Used to control high blood sugar in people with type 2 diabetes. It works by helping to restore your body's proper response to insulin.",
-    "cidophage": "Used to control high blood sugar in people with type 2 diabetes. It works by helping to restore your body's proper response to insulin.",
-    "norvasc": "Used to treat high blood pressure and chest pain (angina). It works by relaxing blood vessels.",
-    "amlor": "Used to treat high blood pressure and chest pain (angina). It works by relaxing blood vessels.",
+    "metformin": "Used to treat type 2 diabetes. It helps control blood sugar levels.",
+    "glucophage": "Used to treat type 2 diabetes. It helps control blood sugar levels.",
+    "cidophage": "Used to treat type 2 diabetes. It helps control blood sugar levels.",
+    "lantus": "A long-acting insulin used to treat diabetes by helping to control blood sugar levels.",
+    "ozempic": "Used to treat type 2 diabetes and may help with weight loss. It helps control blood sugar levels.",
+    "zocor": "Used to lower cholesterol and reduce the risk of heart disease and stroke.",
+    "crestor": "Used to lower cholesterol and reduce the risk of heart disease and stroke.",
+    "norvasc": "Used to treat high blood pressure and chest pain (angina). Lowering high blood pressure helps prevent strokes, heart attacks, and kidney problems.",
+    "plavix": "Used to prevent blood clots and reduce the risk of stroke and heart attack.",
+    "xarelto": "Used to prevent blood clots and reduce the risk of stroke and heart attack.",
+    "allegra": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing.",
     "zyrtec": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing. Also used to relieve itching and hives.",
     "alerid": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing. Also used to relieve itching and hives.",
     "doxycycline": "Used to treat bacterial infections including pneumonia, acne, urinary tract infections, and sexually transmitted infections.",
     "azithromycin": "Used to treat many different types of infections caused by bacteria, including infections of the lungs, skin, ears, and reproductive organs.",
     "ciprofloxacin": "Used to treat bacterial infections including urinary tract infections, pneumonia, and skin infections.",
+    
+    # FIXED: Added missing medicines from the user's questions
+    "protonix": "Used to treat certain stomach and esophagus problems such as acid reflux and ulcers. It decreases the amount of acid your stomach makes.",
+    "pantoprazole": "Used to treat certain stomach and esophagus problems such as acid reflux and ulcers. It decreases the amount of acid your stomach makes.",
+    "levothyroxine": "Used to replace thyroid hormone in people whose thyroid gland does not produce enough thyroid hormone. Treats hypothyroidism.",
+    "synthroid": "Used to replace thyroid hormone in people whose thyroid gland does not produce enough thyroid hormone. Treats hypothyroidism.",
+    "montelukast": "Used to prevent asthma attacks and to relieve symptoms of seasonal allergies. It works by blocking certain natural substances that cause allergic reactions.",
+    "singulair": "Used to prevent asthma attacks and to relieve symptoms of seasonal allergies. It works by blocking certain natural substances that cause allergic reactions.",
+    "nexium": "Used to treat certain stomach and esophagus problems such as acid reflux and ulcers. It decreases the amount of acid your stomach makes.",
+    "esomeprazole": "Used to treat certain stomach and esophagus problems such as acid reflux and ulcers. It decreases the amount of acid your stomach makes.",
+    "zantac": "Used to treat and prevent stomach and intestinal ulcers, and to treat conditions where the stomach produces too much acid.",
+    "ranitidine": "Used to treat and prevent stomach and intestinal ulcers, and to treat conditions where the stomach produces too much acid.",
+    "atorvastatin": "Used to lower cholesterol and reduce the risk of heart disease and stroke.",
+    "simvastatin": "Used to lower cholesterol and reduce the risk of heart disease and stroke.",
+    "rosuvastatin": "Used to lower cholesterol and reduce the risk of heart disease and stroke.",
+    "amlodipine": "Used to treat high blood pressure and chest pain (angina). Lowering high blood pressure helps prevent strokes, heart attacks, and kidney problems.",
+    "lisinopril": "Used to treat high blood pressure and heart failure. It belongs to a class of drugs known as ACE inhibitors.",
+    "hydrochlorothiazide": "Used to treat high blood pressure and fluid retention (edema). It helps your kidneys remove excess water and salt from your body.",
+    "metoprolol": "Used to treat high blood pressure, chest pain, and heart failure. It belongs to a class of drugs known as beta blockers.",
+    "carvedilol": "Used to treat high blood pressure and heart failure. It belongs to a class of drugs known as beta blockers.",
+    "warfarin": "Used to prevent blood clots from forming or growing larger in your blood and blood vessels.",
+    "coumadin": "Used to prevent blood clots from forming or growing larger in your blood and blood vessels.",
+    "digoxin": "Used to treat heart failure and irregular heartbeats (atrial fibrillation). It helps the heart beat stronger and with a more regular rhythm.",
+    "furosemide": "Used to treat fluid retention (edema) and high blood pressure. It helps your kidneys remove excess water and salt from your body.",
+    "lasix": "Used to treat fluid retention (edema) and high blood pressure. It helps your kidneys remove excess water and salt from your body.",
+    "naproxen": "Used to relieve pain, swelling, and joint stiffness caused by arthritis, bursitis, and gout attacks.",
+    "aleve": "Used to relieve pain, swelling, and joint stiffness caused by arthritis, bursitis, and gout attacks.",
+    "cetirizine": "Used to relieve allergy symptoms such as watery eyes, runny nose, itching eyes/nose, and sneezing. Also used to relieve itching and hives.",
+    
+    # Nasal sprays and allergy medications - FIXED: Added Flonase and related medicines
+    "flonase": "Used to treat nasal symptoms such as congestion, sneezing, and runny nose caused by seasonal or year-round allergies. Also used to treat nasal polyps.",
+    "fluticasone": "Used to treat nasal symptoms such as congestion, sneezing, and runny nose caused by seasonal or year-round allergies. Also used to treat nasal polyps.",
+    "nasacort": "Used to treat nasal symptoms of allergies including congestion, sneezing, and runny nose. Provides 24-hour relief from allergy symptoms.",
+    "triamcinolone": "Used to treat nasal symptoms of allergies including congestion, sneezing, and runny nose. Provides 24-hour relief from allergy symptoms.",
+    "rhinocort": "Used to treat and prevent nasal symptoms caused by allergies including runny nose, stuffy nose, and sneezing.",
+    "budesonide": "Used to treat and prevent nasal symptoms caused by allergies including runny nose, stuffy nose, and sneezing.",
+    "nasonex": "Used to treat nasal symptoms of seasonal and year-round allergies. Also used to treat and prevent nasal polyps.",
+    "mometasone": "Used to treat nasal symptoms of seasonal and year-round allergies. Also used to treat and prevent nasal polyps.",
+    "afrin": "Used for temporary relief of nasal congestion due to colds, allergies, or sinus irritation. Should not be used for more than 3 days.",
+    "oxymetazoline": "Used for temporary relief of nasal congestion due to colds, allergies, or sinus irritation. Should not be used for more than 3 days.",
+    "sudafed": "Used to temporarily relieve nasal congestion due to the common cold, hay fever, or other upper respiratory allergies.",
+    "pseudoephedrine": "Used to temporarily relieve nasal congestion due to the common cold, hay fever, or other upper respiratory allergies.",
+    "mucinex": "Used to help loosen congestion in your chest and throat, making it easier to cough out through your mouth.",
+    "guaifenesin": "Used to help loosen congestion in your chest and throat, making it easier to cough out through your mouth.",
 }
 
 def get_local_usage(drug_name: str) -> str:

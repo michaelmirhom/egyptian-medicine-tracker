@@ -12,24 +12,43 @@ from typing import Optional
 DICTIONARY = {
     "كلاريتين": "claritin",
     "بانادول": "panadol", 
+    "البانادول": "panadol",  # With definite article
     "ريفو": "rivo",
+    "الريفو": "rivo",  # With definite article
     "فولتارين": "voltaren",
+    "الفولتارين": "voltaren",  # With definite article
     "كونكور": "concor",
+    "الكونكور": "concor",  # With definite article
     "ليبيتور": "lipitor",
+    "الليبيتور": "lipitor",  # With definite article
     "أوجمنتين": "augmentin",
+    "الأوجمنتين": "augmentin",  # With definite article
     "أموكسيسيلين": "amoxicillin",
+    "الأموكسيسيلين": "amoxicillin",  # With definite article
     "لوراتادين": "loratadine",
+    "اللوراتادين": "loratadine",  # With definite article
     "أليجرا": "allegra",
+    "الأليجرا": "allegra",  # With definite article
     "زيرتيك": "zyrtec",
+    "الزيرتيك": "zyrtec",  # With definite article
     "بينادريل": "benadryl",
+    "البينادريل": "benadryl",  # With definite article
     "أسبيرين": "aspirin",
+    "الأسبيرين": "aspirin",  # With definite article
     "أيبوبروفين": "ibuprofen",
+    "الأيبوبروفين": "ibuprofen",  # With definite article
     "أزيثروميسين": "azithromycin",
+    "الأزيثروميسين": "azithromycin",  # With definite article
     "ديكلوفيناك": "diclofenac",
+    "الديكلوفيناك": "diclofenac",  # With definite article
     "سيتريزين": "cetirizine",
+    "السيتريزين": "cetirizine",  # With definite article
     "أوميبرازول": "omeprazole",
+    "الأوميبرازول": "omeprazole",  # With definite article
     "ميتفورمين": "metformin",
+    "الميتفورمين": "metformin",  # With definite article
     "بروزاك": "prozac",  # Prozac in Arabic
+    "البروزاك": "prozac",  # With definite article
     "بروتاسي": "protasi",  # Alternative spelling
     "جروزا": "groza",  # Alternative spelling
     "بروماكس": "promax",  # Alternative spelling
