@@ -1,0 +1,12 @@
+# PDF Analysis Dependencies
+PyPDF2==3.0.1
+pdfplumber==0.10.3
+pdf2image==1.16.3
+pytesseract==0.3.10
+opencv-python==4.8.1.78
+Pillow==10.0.1
+numpy==1.24.3
+
+# OCR Language packs (install separately)
+# For Arabic: sudo apt-get install tesseract-ocr-ara
+# For English: sudo apt-get install tesseract-ocr-eng 

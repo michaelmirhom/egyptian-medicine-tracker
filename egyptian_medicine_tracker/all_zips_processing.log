@@ -1,0 +1,82 @@
+2025-07-19 21:12:01,428 - INFO - Processing ZIP file: Data/dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:01,780 - INFO - Found 15048 nested ZIP files in dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:01,780 - INFO - Processing nested ZIP 1/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:01,919 - INFO - Processing nested ZIP 51/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:02,493 - INFO - Saved 100 medicines from dm_spl_release_human_rx_part1.zip...
+2025-07-19 21:12:02,498 - INFO - Processing nested ZIP 101/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:02,897 - INFO - Processing nested ZIP 151/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:04,144 - INFO - Processing nested ZIP 201/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:04,407 - INFO - Saved 200 medicines from dm_spl_release_human_rx_part1.zip...
+2025-07-19 21:12:04,893 - INFO - Processing nested ZIP 251/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:05,239 - INFO - Processing nested ZIP 301/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:05,332 - INFO - Saved 300 medicines from dm_spl_release_human_rx_part1.zip...
+2025-07-19 21:12:05,544 - INFO - Processing nested ZIP 351/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:05,946 - INFO - Processing nested ZIP 401/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:06,225 - INFO - Saved 400 medicines from dm_spl_release_human_rx_part1.zip...
+2025-07-19 21:12:06,727 - INFO - Processing nested ZIP 451/500 from dm_spl_release_human_rx_part1.zip
+2025-07-19 21:12:07,250 - INFO - Completed dm_spl_release_human_rx_part1.zip: Processed 475, Errors 0
+2025-07-19 21:12:07,256 - INFO - Processing ZIP file: Data/dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:07,504 - INFO - Found 10451 nested ZIP files in dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:07,559 - INFO - Processing nested ZIP 1/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:08,173 - INFO - Processing nested ZIP 51/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:08,511 - INFO - Processing nested ZIP 101/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:08,626 - INFO - Saved 100 medicines from dm_spl_release_human_rx_part2.zip...
+2025-07-19 21:12:09,492 - INFO - Processing nested ZIP 151/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:10,246 - INFO - Processing nested ZIP 201/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:10,868 - INFO - Saved 200 medicines from dm_spl_release_human_rx_part2.zip...
+2025-07-19 21:12:10,869 - INFO - Processing nested ZIP 251/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:11,627 - INFO - Processing nested ZIP 301/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:12,244 - INFO - Processing nested ZIP 351/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:12,721 - INFO - Saved 300 medicines from dm_spl_release_human_rx_part2.zip...
+2025-07-19 21:12:13,157 - INFO - Processing nested ZIP 401/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:13,914 - INFO - Processing nested ZIP 451/500 from dm_spl_release_human_rx_part2.zip
+2025-07-19 21:12:15,787 - INFO - Completed dm_spl_release_human_rx_part2.zip: Processed 396, Errors 0
+2025-07-19 21:12:15,796 - INFO - Processing ZIP file: Data/dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:16,051 - INFO - Found 9194 nested ZIP files in dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:16,056 - INFO - Processing nested ZIP 1/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:17,638 - INFO - Processing nested ZIP 51/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:18,640 - INFO - Processing nested ZIP 101/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:18,808 - INFO - Saved 100 medicines from dm_spl_release_human_rx_part3.zip...
+2025-07-19 21:12:19,313 - INFO - Processing nested ZIP 151/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:20,175 - INFO - Processing nested ZIP 201/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:20,930 - INFO - Saved 200 medicines from dm_spl_release_human_rx_part3.zip...
+2025-07-19 21:12:21,045 - INFO - Processing nested ZIP 251/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:21,514 - INFO - Processing nested ZIP 301/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:21,974 - INFO - Processing nested ZIP 351/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:22,246 - INFO - Saved 300 medicines from dm_spl_release_human_rx_part3.zip...
+2025-07-19 21:12:22,412 - INFO - Processing nested ZIP 401/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:22,865 - INFO - Processing nested ZIP 451/500 from dm_spl_release_human_rx_part3.zip
+2025-07-19 21:12:23,356 - INFO - Completed dm_spl_release_human_rx_part3.zip: Processed 385, Errors 0
+2025-07-19 21:12:23,361 - INFO - Processing ZIP file: Data/dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:23,495 - INFO - Found 9380 nested ZIP files in dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:23,496 - INFO - Processing nested ZIP 1/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:23,992 - INFO - Processing nested ZIP 51/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:24,490 - INFO - Processing nested ZIP 101/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:24,757 - INFO - Saved 100 medicines from dm_spl_release_human_rx_part4.zip...
+2025-07-19 21:12:24,998 - INFO - Processing nested ZIP 151/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:25,412 - INFO - Processing nested ZIP 201/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:26,095 - INFO - Saved 200 medicines from dm_spl_release_human_rx_part4.zip...
+2025-07-19 21:12:26,164 - INFO - Processing nested ZIP 251/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:26,625 - INFO - Processing nested ZIP 301/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:27,116 - INFO - Processing nested ZIP 351/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:27,344 - INFO - Saved 300 medicines from dm_spl_release_human_rx_part4.zip...
+2025-07-19 21:12:27,559 - INFO - Processing nested ZIP 401/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:28,010 - INFO - Processing nested ZIP 451/500 from dm_spl_release_human_rx_part4.zip
+2025-07-19 21:12:28,358 - INFO - Saved 400 medicines from dm_spl_release_human_rx_part4.zip...
+2025-07-19 21:12:28,423 - INFO - Completed dm_spl_release_human_rx_part4.zip: Processed 402, Errors 0
+2025-07-19 21:12:28,430 - INFO - Processing ZIP file: Data/dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:28,555 - INFO - Found 6599 nested ZIP files in dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:28,556 - INFO - Processing nested ZIP 1/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:29,378 - INFO - Processing nested ZIP 51/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:30,130 - INFO - Processing nested ZIP 101/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:30,646 - INFO - Saved 100 medicines from dm_spl_release_human_rx_part5.zip...
+2025-07-19 21:12:30,665 - INFO - Processing nested ZIP 151/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:31,897 - INFO - Processing nested ZIP 201/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:34,146 - INFO - Processing nested ZIP 251/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:34,937 - INFO - Saved 200 medicines from dm_spl_release_human_rx_part5.zip...
+2025-07-19 21:12:35,536 - INFO - Processing nested ZIP 301/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:37,000 - INFO - Processing nested ZIP 351/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:38,392 - INFO - Processing nested ZIP 401/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:38,551 - INFO - Saved 300 medicines from dm_spl_release_human_rx_part5.zip...
+2025-07-19 21:12:39,631 - INFO - Processing nested ZIP 451/500 from dm_spl_release_human_rx_part5.zip
+2025-07-19 21:12:40,599 - INFO - Completed dm_spl_release_human_rx_part5.zip: Processed 362, Errors 0

@@ -1,0 +1,14 @@
+2025-07-19 18:45:31,325 - INFO - Database setup completed
+2025-07-19 18:45:31,326 - INFO - Starting DailyMed data processing...
+2025-07-19 18:45:31,336 - INFO - Found 5 ZIP files
+2025-07-19 18:45:31,339 - INFO - Extracting: dm_spl_release_human_rx_part1.zip
+2025-07-19 18:56:25,571 - INFO - Extracted 0 XML files from dm_spl_release_human_rx_part1.zip
+2025-07-19 18:56:25,572 - INFO - Extracting: dm_spl_release_human_rx_part2.zip
+2025-07-19 19:02:10,735 - INFO - Extracted 0 XML files from dm_spl_release_human_rx_part2.zip
+2025-07-19 19:02:10,736 - INFO - Extracting: dm_spl_release_human_rx_part3.zip
+2025-07-19 19:07:59,976 - INFO - Extracted 0 XML files from dm_spl_release_human_rx_part3.zip
+2025-07-19 19:07:59,977 - INFO - Extracting: dm_spl_release_human_rx_part4.zip
+2025-07-19 19:15:17,217 - INFO - Extracted 0 XML files from dm_spl_release_human_rx_part4.zip
+2025-07-19 19:15:17,218 - INFO - Extracting: dm_spl_release_human_rx_part5.zip
+2025-07-19 19:19:17,660 - INFO - Extracted 0 XML files from dm_spl_release_human_rx_part5.zip
+2025-07-19 19:19:17,664 - ERROR - No XML files found after extraction
