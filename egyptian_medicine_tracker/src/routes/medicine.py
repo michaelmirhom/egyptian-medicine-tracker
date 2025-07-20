@@ -1340,6 +1340,8 @@ def extract_medicine_name_from_question(question: str, user_id: str = None) -> s
         'proair hfa', 'proair', 'ventolin hfa', 'zithromax', 'azithromycin', 'neurontin', 'gabapentin',
         'amoxil', 'amoxicillin', 'keflex', 'cephalexin',
         'epipen', 'toprol xl', 'toprol',
+        # ADDED: Medicines from your database
+        'renese', 'mykrox', 'tolinase', 'hypaque', 'halotestin', 'dantrium', 'lithane',
     ]
     
     question_lower = question.lower()
@@ -1422,6 +1424,36 @@ def extract_medicine_name_from_question(question: str, user_id: str = None) -> s
         return best_match
     
     print(f"[DEBUG] [extract_medicine_name_from_question] No good match found for: '{question_lower}'")
+    
+    # NEW: Try to find the medicine in the database if not in hardcoded list
+    print(f"[DEBUG] [extract_medicine_name_from_question] Trying database lookup for: '{question_lower}'")
+    try:
+        from src.models.medicine import db
+        
+        # Query the database for this medicine name
+        query = """
+        SELECT DISTINCT trade_name, generic_name 
+        FROM medicine_dailymed_complete_all 
+        WHERE LOWER(trade_name) LIKE ? 
+           OR LOWER(generic_name) LIKE ?
+        LIMIT 1
+        """
+        
+        result = db.session.execute(query, (f"%{question_lower}%", f"%{question_lower}%"))
+        row = result.fetchone()
+        
+        if row and row[0]:  # Found in database
+            db_medicine_name = row[0].lower().strip()
+            print(f"[DEBUG] [extract_medicine_name_from_question] Found in database: '{db_medicine_name}'")
+            return db_medicine_name
+        elif row and row[1]:  # Found generic name
+            db_generic_name = row[1].lower().strip()
+            print(f"[DEBUG] [extract_medicine_name_from_question] Found generic name in database: '{db_generic_name}'")
+            return db_generic_name
+            
+    except Exception as e:
+        print(f"[DEBUG] [extract_medicine_name_from_question] Database lookup error: {e}")
+    
     return ''
 
 def extract_multiple_medicines_from_question(question: str) -> list:
