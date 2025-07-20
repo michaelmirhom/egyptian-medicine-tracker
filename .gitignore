@@ -4,3 +4,6 @@ Data/
 instance/
 *.sqlite
 egyptian_medicine_tracker/venv/
+
+# TEMPORARY: Allow deployment database for Render
+!deployment_database.db
