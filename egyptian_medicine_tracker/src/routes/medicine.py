@@ -2114,15 +2114,15 @@ def get_active_ingredients_from_database(medicine_name: str) -> list:
         
         ingredients = []
         for row in rows:
-            if row[0]:  # active_ingredients
+            if row[0] and row[0] != 'None':  # active_ingredients
                 ingredients.append(row[0])
-            if row[2] and row[2] not in ingredients:  # generic_name
+            if row[2] and row[2] != 'None' and row[2] not in ingredients:  # generic_name
                 ingredients.append(row[2])
         
         # Remove duplicates and clean
         unique_ingredients = []
         for ingredient in ingredients:
-            if ingredient and ingredient.strip():
+            if ingredient and ingredient.strip() and ingredient.strip() != 'None':
                 clean_ingredient = ingredient.strip()
                 if clean_ingredient not in unique_ingredients:
                     unique_ingredients.append(clean_ingredient)
@@ -2157,13 +2157,31 @@ def get_medicine_usage_from_database(medicine_name: str) -> str:
             # Build usage information from available data
             usage_info = []
             for row in rows:
-                if row[0]:  # active_ingredients
+                if row[0] and row[0] != 'None':  # active_ingredients
                     usage_info.append(f"Active ingredient: {row[0]}")
-                if row[2]:  # generic_name
+                if row[2] and row[2] != 'None':  # generic_name
                     usage_info.append(f"Generic name: {row[2]}")
             
             if usage_info:
                 return ". ".join(usage_info)
+            
+                    # If no detailed info but medicine exists in database, provide basic confirmation
+        if rows and rows[0][1]:  # trade_name exists
+            # Try to provide basic info for known medicines
+            basic_info = {
+                'renese': 'RENESE is a diuretic medication used to treat high blood pressure and fluid retention.',
+                'mykrox': 'Mykrox is a diuretic medication used to treat high blood pressure and edema.',
+                'tolinase': 'Tolinase is an oral diabetes medication used to control blood sugar levels.',
+                'halotestin': 'Halotestin is an anabolic steroid medication.',
+                'dantrium': 'Dantrium is a muscle relaxant used to treat muscle spasticity.',
+                'lithane': 'LITHANE is a mood stabilizer used to treat bipolar disorder.'
+            }
+            
+            medicine_lower = medicine_name.lower()
+            if medicine_lower in basic_info:
+                return basic_info[medicine_lower]
+            else:
+                return f"{medicine_name.title()} is found in our medicine database. For detailed usage information, please consult your doctor or pharmacist."
         
         return ""
         
