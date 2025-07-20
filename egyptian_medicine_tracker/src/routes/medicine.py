@@ -274,7 +274,15 @@ def get_comprehensive_medical_info(trade_name: str, generic_name: str, original_
 
 def get_active_ingredients(medicine_name: str) -> list:
     """Get active ingredients for a medicine from local database."""
-    # Local database of active ingredients (including Arabic variations)
+    print(f"[DEBUG] [get_active_ingredients] Looking for: {medicine_name}")
+    
+    # FIRST: Try the actual database (your extracted data)
+    db_ingredients = get_active_ingredients_from_database(medicine_name)
+    if db_ingredients:
+        print(f"[DEBUG] [get_active_ingredients] Found in database: {db_ingredients}")
+        return db_ingredients
+    
+    # FALLBACK: Use hardcoded dictionary for common medicines
     active_ingredients_db = {
         'lipitor': ['Atorvastatin'],
         'ليبيتور': ['Atorvastatin'],
@@ -443,6 +451,7 @@ def get_active_ingredients(medicine_name: str) -> list:
         if arabic_clean in active_ingredients_db:
             return active_ingredients_db[arabic_clean]
     
+    print(f"[DEBUG] [get_active_ingredients] No ingredients found for: {medicine_name}")
     return []
 
 def get_rxnav_detailed_info(rxcui: str) -> dict:
@@ -896,10 +905,19 @@ def get_medicine_usage(medicine_name):
         errors.append(f"DailyMed: {e}")
     # LAST RESORT: Check local database
     print(f"[DEBUG] [get_medicine_usage] APIs failed, trying local database")
+    
+    # Try the actual database first (your extracted data)
+    db_usage = get_medicine_usage_from_database(medicine_name)
+    if db_usage:
+        print(f"[DEBUG] [get_medicine_usage] Found usage in database: {db_usage}")
+        return f"{medicine_name.title()} is used for: {db_usage}"
+    
+    # Fallback to hardcoded usage
     usage = get_local_usage(medicine_name)
     if usage:
-        print(f"[DEBUG] [get_medicine_usage] Found usage in local database")
+        print(f"[DEBUG] [get_medicine_usage] Found usage in hardcoded database")
         return f"{medicine_name.title()} is used for: {usage}"
+    
     print(f"[DEBUG] [get_medicine_usage] No usage information found anywhere. Errors: {errors}")
     return f"Sorry, I couldn't find usage information for {medicine_name.title()}."
 
@@ -1728,9 +1746,17 @@ def get_active_ingredients_api_first(medicine_name: str) -> list:
     # LAST RESORT: Local database (only when ALL APIs fail)
     try:
         print(f"[DEBUG] [get_active_ingredients_api_first] ALL APIs failed, falling back to local database")
+        
+        # Try the actual database first (your extracted data)
+        db_ingredients = get_active_ingredients_from_database(medicine_name)
+        if db_ingredients:
+            print(f"[DEBUG] [get_active_ingredients_api_first] Found in database: {db_ingredients}")
+            return db_ingredients
+        
+        # Fallback to hardcoded database
         local_ingredients = get_active_ingredients(medicine_name)
         if local_ingredients:
-            print(f"[DEBUG] [get_active_ingredients_api_first] Found in local database: {local_ingredients}")
+            print(f"[DEBUG] [get_active_ingredients_api_first] Found in hardcoded database: {local_ingredients}")
             return local_ingredients
     except Exception as e:
         print(f"[DEBUG] [get_active_ingredients_api_first] Local DB error: {e}")
@@ -2025,5 +2051,92 @@ def clean_ingredient_name(ingredient: str) -> str:
         return 'Fluticasone propionate'
     
     return cleaned
+
+def get_active_ingredients_from_database(medicine_name: str) -> list:
+    """Get active ingredients for a medicine from the actual database tables."""
+    try:
+        # Import here to avoid circular imports
+        from src.models.medicine import db
+        
+        # Clean the medicine name for search
+        clean_name = medicine_name.lower().strip()
+        
+        # Query the database tables that contain our extracted data
+        query = """
+        SELECT DISTINCT active_ingredients, trade_name, generic_name 
+        FROM medicine_dailymed_complete_all 
+        WHERE LOWER(trade_name) LIKE ? 
+           OR LOWER(generic_name) LIKE ? 
+           OR LOWER(trade_name) LIKE ? 
+           OR LOWER(generic_name) LIKE ?
+        LIMIT 10
+        """
+        
+        # Create search patterns
+        exact_match = f"%{clean_name}%"
+        partial_match = f"%{clean_name}%"
+        
+        # Execute query
+        result = db.session.execute(query, (exact_match, exact_match, partial_match, partial_match))
+        rows = result.fetchall()
+        
+        ingredients = []
+        for row in rows:
+            if row[0]:  # active_ingredients
+                ingredients.append(row[0])
+            if row[2] and row[2] not in ingredients:  # generic_name
+                ingredients.append(row[2])
+        
+        # Remove duplicates and clean
+        unique_ingredients = []
+        for ingredient in ingredients:
+            if ingredient and ingredient.strip():
+                clean_ingredient = ingredient.strip()
+                if clean_ingredient not in unique_ingredients:
+                    unique_ingredients.append(clean_ingredient)
+        
+        print(f"[DEBUG] [get_active_ingredients_from_database] Found {len(unique_ingredients)} ingredients for '{medicine_name}': {unique_ingredients}")
+        return unique_ingredients
+        
+    except Exception as e:
+        print(f"[DEBUG] [get_active_ingredients_from_database] Database query error: {e}")
+        return []
+
+def get_medicine_usage_from_database(medicine_name: str) -> str:
+    """Get usage information for a medicine from the database."""
+    try:
+        from src.models.medicine import db
+        
+        clean_name = medicine_name.lower().strip()
+        
+        # Query for usage information
+        query = """
+        SELECT DISTINCT active_ingredients, trade_name, generic_name 
+        FROM medicine_dailymed_complete_all 
+        WHERE LOWER(trade_name) LIKE ? 
+           OR LOWER(generic_name) LIKE ?
+        LIMIT 5
+        """
+        
+        result = db.session.execute(query, (f"%{clean_name}%", f"%{clean_name}%"))
+        rows = result.fetchall()
+        
+        if rows:
+            # Build usage information from available data
+            usage_info = []
+            for row in rows:
+                if row[0]:  # active_ingredients
+                    usage_info.append(f"Active ingredient: {row[0]}")
+                if row[2]:  # generic_name
+                    usage_info.append(f"Generic name: {row[2]}")
+            
+            if usage_info:
+                return ". ".join(usage_info)
+        
+        return ""
+        
+    except Exception as e:
+        print(f"[DEBUG] [get_medicine_usage_from_database] Database query error: {e}")
+        return ""
 
 # Add other necessary routes and functions here... 
