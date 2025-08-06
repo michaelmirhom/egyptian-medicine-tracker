@@ -1429,17 +1429,21 @@ def extract_medicine_name_from_question(question: str, user_id: str = None) -> s
     print(f"[DEBUG] [extract_medicine_name_from_question] Trying database lookup for: '{question_lower}'")
     try:
         from src.models.medicine import db
+        from sqlalchemy import text
         
         # Query the database for this medicine name
-        query = """
+        query = text("""
         SELECT DISTINCT trade_name, generic_name 
         FROM medicine_dailymed_complete_all 
-        WHERE LOWER(trade_name) LIKE ? 
-           OR LOWER(generic_name) LIKE ?
+        WHERE LOWER(trade_name) LIKE :search1 
+           OR LOWER(generic_name) LIKE :search2
         LIMIT 1
-        """
+        """)
         
-        result = db.session.execute(query, (f"%{question_lower}%", f"%{question_lower}%"))
+        result = db.session.execute(query, {
+            'search1': f"%{question_lower}%", 
+            'search2': f"%{question_lower}%"
+        })
         row = result.fetchone()
         
         if row and row[0]:  # Found in database
@@ -2089,27 +2093,33 @@ def get_active_ingredients_from_database(medicine_name: str) -> list:
     try:
         # Import here to avoid circular imports
         from src.models.medicine import db
+        from sqlalchemy import text
         
         # Clean the medicine name for search
         clean_name = medicine_name.lower().strip()
         
         # Query the database tables that contain our extracted data
-        query = """
+        query = text("""
         SELECT DISTINCT active_ingredients, trade_name, generic_name 
         FROM medicine_dailymed_complete_all 
-        WHERE LOWER(trade_name) LIKE ? 
-           OR LOWER(generic_name) LIKE ? 
-           OR LOWER(trade_name) LIKE ? 
-           OR LOWER(generic_name) LIKE ?
+        WHERE LOWER(trade_name) LIKE :search1 
+           OR LOWER(generic_name) LIKE :search2 
+           OR LOWER(trade_name) LIKE :search3 
+           OR LOWER(generic_name) LIKE :search4
         LIMIT 10
-        """
+        """)
         
         # Create search patterns
         exact_match = f"%{clean_name}%"
         partial_match = f"%{clean_name}%"
         
         # Execute query
-        result = db.session.execute(query, (exact_match, exact_match, partial_match, partial_match))
+        result = db.session.execute(query, {
+            'search1': exact_match, 
+            'search2': exact_match, 
+            'search3': partial_match, 
+            'search4': partial_match
+        })
         rows = result.fetchall()
         
         ingredients = []
@@ -2138,19 +2148,23 @@ def get_medicine_usage_from_database(medicine_name: str) -> str:
     """Get usage information for a medicine from the database."""
     try:
         from src.models.medicine import db
+        from sqlalchemy import text
         
         clean_name = medicine_name.lower().strip()
         
         # Query for usage information
-        query = """
+        query = text("""
         SELECT DISTINCT active_ingredients, trade_name, generic_name 
         FROM medicine_dailymed_complete_all 
-        WHERE LOWER(trade_name) LIKE ? 
-           OR LOWER(generic_name) LIKE ?
+        WHERE LOWER(trade_name) LIKE :search1 
+           OR LOWER(generic_name) LIKE :search2
         LIMIT 5
-        """
+        """)
         
-        result = db.session.execute(query, (f"%{clean_name}%", f"%{clean_name}%"))
+        result = db.session.execute(query, {
+            'search1': f"%{clean_name}%", 
+            'search2': f"%{clean_name}%"
+        })
         rows = result.fetchall()
         
         if rows:
